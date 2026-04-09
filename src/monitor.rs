@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
@@ -205,6 +205,20 @@ fn run_with_linux_ebpf_helper(
         request.ebpf_file,
     )?;
 
+    // Same defense-in-depth check as the DockerVmHelper backend: bpftrace
+    // can silently fail to attach probes (kernel config gap, missing tracefs
+    // mount, etc) and the user would otherwise get empty JSONL files with
+    // no warning. The Linux backend doesn't have the lenient/strict mode
+    // machinery so we surface the failure as a loud stderr warning rather
+    // than falling back — the run still proceeds but the operator knows
+    // the strong telemetry is missing.
+    thread::sleep(Duration::from_millis(750));
+    if let Some(probe_failures) = scan_collector_attach_failures(logs_dir, request) {
+        eprintln!(
+            "[AgentFence] WARNING: strong host monitoring is degraded.\n{probe_failures}\n[AgentFence] Continuing with whatever telemetry is available; check the ebpf_*.stderr.log files in the session directory."
+        );
+    }
+
     let mut docker_child = match docker_command.spawn() {
         Ok(child) => child,
         Err(err) => {
@@ -257,8 +271,72 @@ fn run_with_docker_vm_helper(
         );
     }
 
+    // The helper container can stay "alive" while bpftrace silently fails to
+    // attach its probes (e.g. missing tracefs mount, kernel config gap). When
+    // that happens the ebpf_*.jsonl files end up empty and the user gets a
+    // false sense of monitoring. Surface those failures by inspecting each
+    // collector's stderr log before letting the agent container start.
+    if let Some(probe_failures) = scan_collector_attach_failures(logs_dir, request) {
+        let helper_logs = collect_helper_logs(&helper);
+        stop_docker_vm_helper(&mut helper);
+        return handle_helper_failure(
+            docker_command,
+            mode,
+            "Strong monitoring helper started but bpftrace probes did not attach",
+            &probe_failures,
+            helper_logs.as_deref(),
+        );
+    }
+
     // Helper is alive — run the target container alongside it.
     run_with_alive_helper(docker_command, &mut helper)
+}
+
+/// Inspects each requested collector's stderr log for known bpftrace
+/// attach-failure markers. Returns a multi-line summary if any probes failed,
+/// or `None` if everything looks attached. Called after the helper alive
+/// check so bpftrace has had time to either error or settle into its event
+/// loop.
+fn scan_collector_attach_failures(
+    logs_dir: &Path,
+    request: MonitoringRequest,
+) -> Option<String> {
+    let collectors: &[(bool, &str, &str)] = &[
+        (request.ebpf_exec, "ebpf_exec.stderr.log", "exec"),
+        (request.ebpf_net, "ebpf_connect.stderr.log", "connect"),
+        (request.ebpf_file, "ebpf_file.stderr.log", "file"),
+    ];
+
+    let mut failures: Vec<String> = Vec::new();
+    for (requested, fname, label) in collectors {
+        if !requested {
+            continue;
+        }
+        let path = logs_dir.join(fname);
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed.starts_with("ERROR:")
+                || trimmed.contains("Unable to attach probe")
+                || trimmed.contains("Could not read symbols")
+                || trimmed.contains("not available for your kernel")
+            {
+                failures.push(format!("{label}: {trimmed}"));
+                break;
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        None
+    } else {
+        Some(format!("bpftrace probe attach failed:\n  - {}", failures.join("\n  - ")))
+    }
 }
 
 fn run_with_alive_helper(
@@ -446,6 +524,16 @@ fn spawn_docker_vm_helper_container(
         .arg("type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock")
         .arg("--mount")
         .arg("type=bind,source=/sys/fs/cgroup,target=/sys/fs/cgroup,readonly")
+        // bpftrace reads tracepoint definitions from tracefs and uses debugfs
+        // for some kernel symbol resolution. Without these mounts the helper
+        // container has no /sys/kernel/tracing/events tree, so the tracepoints
+        // appear "not found" even though the host kernel exposes them. This is
+        // the root cause of bpftrace's silent attach failures inside the
+        // sidecar — required for every macOS Docker provider (Lima/Colima/etc).
+        .arg("--mount")
+        .arg("type=bind,source=/sys/kernel/tracing,target=/sys/kernel/tracing")
+        .arg("--mount")
+        .arg("type=bind,source=/sys/kernel/debug,target=/sys/kernel/debug")
         .arg(&helper_image)
         .arg("collect-ebpf")
         .arg("--container-name")
