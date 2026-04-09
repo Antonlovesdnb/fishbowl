@@ -572,9 +572,18 @@ fn spawn_docker_vm_helper_container(
 }
 
 fn stop_docker_vm_helper(helper: &mut DockerVmHelperHandle) {
+    // `docker rm -f` SIGKILLs PID 1 of the helper container (the
+    // `agentfence collect-ebpf` process), which gives bpftrace zero time to
+    // flush its libc stdio buffers or drain remaining perf-ring entries — so
+    // ebpf_*.jsonl files end up missing the most recent events. `docker stop`
+    // sends SIGTERM and waits before escalating; combined with the SIGINT
+    // drain logic in CollectorHandle::stop(), this gives bpftrace the few
+    // hundred ms it needs to flush. The helper container was started with
+    // --rm so it cleans itself up after stop.
     let _ = Command::new("docker")
-        .arg("rm")
-        .arg("-f")
+        .arg("stop")
+        .arg("-t")
+        .arg("5")
         .arg(&helper.container_name)
         .status();
 }

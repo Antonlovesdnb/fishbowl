@@ -124,11 +124,43 @@ pub struct CollectorHandle {
 
 impl CollectorHandle {
     pub fn stop(mut self) -> Result<()> {
+        // Tell the worker thread to stop reading once its current line lands.
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
-        let _ = self.child.kill();
+
+        // Graceful shutdown of bpftrace itself. Child::kill() sends SIGKILL,
+        // which kills bpftrace before it can flush its libc stdio buffer or
+        // drain remaining entries from the perf ring buffer — the result is
+        // empty/short ebpf_*.jsonl files for short-running workloads where
+        // the buffers never filled. Send SIGINT first so bpftrace's own
+        // exit handler runs (it flushes the perf ring + libc stdio), then
+        // give it up to 1.5s to exit cleanly, then escalate to SIGKILL.
+        let pid = self.child.id() as libc::pid_t;
+        unsafe {
+            let _ = libc::kill(pid, libc::SIGINT);
+        }
+        let drain_deadline = Duration::from_millis(1500);
+        let drain_started = Instant::now();
+        let mut drained = false;
+        while drain_started.elapsed() < drain_deadline {
+            match self.child.try_wait() {
+                Ok(Some(_)) => {
+                    drained = true;
+                    break;
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(50)),
+                Err(_) => break,
+            }
+        }
+        if !drained {
+            let _ = self.child.kill();
+        }
         let _ = self.child.wait();
+
+        // The bpftrace pipe is closed now, so the worker's blocking read_line
+        // will return EOF and the loop will see the shutdown signal on the
+        // next iteration. join() drains the rest.
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
@@ -249,8 +281,20 @@ pub fn run_privileged_helper(
 
 fn spawn_exec_collector(logs_dir: &Path, scope: &ScopeMetadata) -> Result<CollectorHandle> {
     let script = build_exec_script(scope);
+    // -B line forces line-buffered stdout. Without it, bpftrace inherits libc's
+    // default full-buffering for non-tty stdout, so printf() output sits in a
+    // 4-8KB userspace buffer until it fills (or until process exit). Sparse
+    // workloads — a handful of execs, a couple of opens — never fill the
+    // buffer, and the helper container's SIGKILL on shutdown preempts the
+    // exit-time flush, so the events the worker thread sees and writes to
+    // ebpf_*.jsonl are only the early-init batch that happens to land before
+    // any of this matters. Validated empirically: long-running tests showed
+    // 21–29 events while back-to-back short tests showed 2–6 events from the
+    // exact same probes.
     let mut child = Command::new("bpftrace")
         .arg("-q")
+        .arg("-B")
+        .arg("line")
         .arg("-e")
         .arg(&script)
         .stdout(Stdio::piped())
@@ -293,8 +337,11 @@ fn spawn_exec_collector(logs_dir: &Path, scope: &ScopeMetadata) -> Result<Collec
 
 fn spawn_connect_collector(logs_dir: &Path, scope: &ScopeMetadata) -> Result<CollectorHandle> {
     let script = build_connect_script(scope);
+    // See spawn_exec_collector for why -B line matters.
     let mut child = Command::new("bpftrace")
         .arg("-q")
+        .arg("-B")
+        .arg("line")
         .arg("-e")
         .arg(&script)
         .stdout(Stdio::piped())
@@ -337,8 +384,11 @@ fn spawn_connect_collector(logs_dir: &Path, scope: &ScopeMetadata) -> Result<Col
 
 fn spawn_file_collector(logs_dir: &Path, scope: &ScopeMetadata) -> Result<CollectorHandle> {
     let script = build_file_script(scope);
+    // See spawn_exec_collector for why -B line matters.
     let mut child = Command::new("bpftrace")
         .arg("-q")
+        .arg("-B")
+        .arg("line")
         .arg("-e")
         .arg(&script)
         .stdout(Stdio::piped())
