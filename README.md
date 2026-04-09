@@ -36,13 +36,29 @@ The current in-container watchers are useful session telemetry, but they are not
 - `--monitor auto` (the default) is lenient on macOS: if the helper container fails to start or crashes during startup, AgentFence prints the helper logs to stderr and continues with container-local telemetry. `--monitor strong` is strict and hard-errors if the helper can't run.
 - **Container images are platform-specific.** When cloning the repo to a host with a different CPU architecture (e.g. Linux x86_64 → macOS aarch64), run `agentfence build-image` again on the new host before `agentfence run`. The build command prints the host architecture so you can see what was built.
 
-## Usage
+## Install
 
-Install the CLI from source:
+### Quick install (prebuilt binary)
+
+macOS (Intel + Apple Silicon) and Linux (x86_64 + arm64) binaries are published with each tagged release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh
+```
+
+The installer auto-detects your OS/arch, verifies the SHA256, and installs to `/usr/local/bin` (falling back to `~/.local/bin`). Pin a version with `AGENTFENCE_VERSION=v0.1.0` or override the install dir with `AGENTFENCE_BIN_DIR=...`.
+
+You still need a container runtime — Docker Desktop, Colima, OrbStack, or Rancher Desktop — running before `agentfence run`.
+
+### From source
 
 ```bash
 cargo install --path .
 ```
+
+Requires Rust ≥ 1.85 (edition 2024).
+
+## Usage
 
 Build the images from source:
 

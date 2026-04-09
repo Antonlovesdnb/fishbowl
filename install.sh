@@ -1,0 +1,130 @@
+#!/usr/bin/env sh
+# AgentFence installer
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh
+#
+# Environment variables:
+#   AGENTFENCE_VERSION   Specific tag to install (default: latest)
+#   AGENTFENCE_BIN_DIR   Install directory (default: /usr/local/bin, falling
+#                        back to ~/.local/bin if not writable)
+
+set -eu
+
+REPO="Antonlovesdnb/AgentFence"
+VERSION="${AGENTFENCE_VERSION:-latest}"
+
+err() { printf 'error: %s\n' "$*" >&2; exit 1; }
+info() { printf '==> %s\n' "$*"; }
+warn() { printf 'warning: %s\n' "$*" >&2; }
+
+need() { command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"; }
+need curl
+need tar
+need uname
+
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+case "$OS" in
+  Darwin)
+    case "$ARCH" in
+      arm64|aarch64) TARGET="aarch64-apple-darwin" ;;
+      x86_64)        TARGET="x86_64-apple-darwin" ;;
+      *) err "unsupported macOS architecture: $ARCH" ;;
+    esac
+    ;;
+  Linux)
+    case "$ARCH" in
+      x86_64|amd64)  TARGET="x86_64-unknown-linux-musl" ;;
+      arm64|aarch64) TARGET="aarch64-unknown-linux-musl" ;;
+      *) err "unsupported Linux architecture: $ARCH" ;;
+    esac
+    ;;
+  *)
+    err "unsupported OS: $OS (AgentFence supports macOS and Linux)"
+    ;;
+esac
+
+# Resolve "latest" to a concrete tag.
+if [ "$VERSION" = "latest" ]; then
+  info "resolving latest release"
+  TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+    | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | head -n1)
+  [ -n "$TAG" ] || err "could not resolve latest release tag"
+else
+  TAG="$VERSION"
+fi
+info "installing AgentFence ${TAG} (${TARGET})"
+
+# Pick install directory.
+USE_SUDO=0
+if [ -n "${AGENTFENCE_BIN_DIR:-}" ]; then
+  BIN_DIR="$AGENTFENCE_BIN_DIR"
+  mkdir -p "$BIN_DIR"
+elif [ -w /usr/local/bin ]; then
+  BIN_DIR="/usr/local/bin"
+elif [ -d /usr/local/bin ] && command -v sudo >/dev/null 2>&1; then
+  BIN_DIR="/usr/local/bin"
+  USE_SUDO=1
+else
+  BIN_DIR="$HOME/.local/bin"
+  mkdir -p "$BIN_DIR"
+fi
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
+
+ARCHIVE="agentfence-${TAG}-${TARGET}.tar.gz"
+URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE}"
+SUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
+
+info "downloading ${URL}"
+curl -fsSL "$URL" -o "${TMP_DIR}/${ARCHIVE}" || err "download failed: $URL"
+
+# Verify checksum if SHA256SUMS is published with the release.
+if curl -fsSL "$SUMS_URL" -o "${TMP_DIR}/SHA256SUMS" 2>/dev/null; then
+  info "verifying checksum"
+  EXPECTED=$(awk -v f="$ARCHIVE" '$2 == f {print $1}' "${TMP_DIR}/SHA256SUMS")
+  [ -n "$EXPECTED" ] || err "no checksum entry for ${ARCHIVE} in SHA256SUMS"
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL=$(sha256sum "${TMP_DIR}/${ARCHIVE}" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL=$(shasum -a 256 "${TMP_DIR}/${ARCHIVE}" | awk '{print $1}')
+  else
+    err "no sha256sum/shasum tool available to verify the download"
+  fi
+  [ "$EXPECTED" = "$ACTUAL" ] || err "checksum mismatch: expected ${EXPECTED}, got ${ACTUAL}"
+else
+  warn "SHA256SUMS not found at ${SUMS_URL}, skipping checksum verification"
+fi
+
+info "extracting"
+tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${TMP_DIR}"
+EXTRACTED="${TMP_DIR}/agentfence-${TAG}-${TARGET}"
+[ -f "${EXTRACTED}/agentfence" ] || err "binary not found in archive"
+
+info "installing to ${BIN_DIR}/agentfence"
+if [ "$USE_SUDO" = "1" ]; then
+  sudo install -m 0755 "${EXTRACTED}/agentfence" "${BIN_DIR}/agentfence"
+else
+  install -m 0755 "${EXTRACTED}/agentfence" "${BIN_DIR}/agentfence"
+fi
+
+case ":$PATH:" in
+  *":${BIN_DIR}:"*) ;;
+  *) warn "${BIN_DIR} is not in PATH. Add it to your shell profile:
+    export PATH=\"${BIN_DIR}:\$PATH\"" ;;
+esac
+
+cat <<EOF
+
+AgentFence ${TAG} installed.
+
+Next steps:
+  agentfence build-image    # build the container image (one-time)
+  agentfence run            # run the current directory in the sandbox
+
+Docs: https://github.com/${REPO}
+EOF
