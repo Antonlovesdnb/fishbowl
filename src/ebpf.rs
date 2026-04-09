@@ -718,13 +718,15 @@ tracepoint:syscalls:sys_enter_connect {predicate}
 
 fn build_file_script(scope: &ScopeMetadata) -> String {
     let predicate = cgroup_predicate(scope);
+    // Note: deliberately omit `tracepoint:syscalls:sys_enter_open`. The bare
+    // `open()` syscall doesn't exist on arm64 (only openat/openat2), and
+    // bpftrace fails the entire script when any single probe is unattachable
+    // — including the survivors. On x86_64 `open()` still exists for legacy
+    // compat, but glibc compiles `open()` to `openat(AT_FDCWD, ...)` so the
+    // openat probe captures the same events. Including the bare-open probe
+    // would silently kill the file collector on every macOS arm64 helper.
     format!(
         r#"
-tracepoint:syscalls:sys_enter_open {predicate}
-{{
-  printf("open\t%d\t%s\t%s\n", pid, comm, str(args->filename));
-}}
-
 tracepoint:syscalls:sys_enter_openat {predicate}
 {{
   printf("openat\t%d\t%s\t%s\n", pid, comm, str(args->filename));
