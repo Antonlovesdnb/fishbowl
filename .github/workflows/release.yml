@@ -13,6 +13,12 @@ on:
 permissions:
   contents: write
 
+env:
+  # Silence Node.js 20 deprecation warnings on actions/checkout, cache,
+  # upload-artifact, etc. These actions still ship the Node 20 entrypoint
+  # but the runner can re-run them on Node 24.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build:
     name: Build ${{ matrix.target }}
@@ -24,7 +30,10 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-14
           - target: x86_64-apple-darwin
-            runner: macos-13
+            # macos-13 (Intel) was retired by GitHub. Cross-compile from the
+            # arm64 macos-14 runner — Apple's toolchain handles this natively
+            # and AgentFence has no native deps that would complicate it.
+            runner: macos-14
           - target: x86_64-unknown-linux-musl
             runner: ubuntu-latest
             apt_packages: musl-tools
