@@ -1,10 +1,13 @@
-FROM rust:1.86-alpine AS builder
+FROM rust:alpine AS builder
 
 WORKDIR /src
 RUN apk add --no-cache musl-dev gcc
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+# container/ is embedded into the binary at compile time via include_dir!,
+# so the builder stage needs the directory present in the build context.
+COPY container ./container
 
 RUN cargo build --release
 
