@@ -11,7 +11,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
+use include_dir::{Dir, include_dir};
 use serde_json::{Map, Value, json};
+
+/// Container build assets (Dockerfile + watchers + entrypoint scripts) embedded
+/// at compile time so prebuilt binaries are self-contained. Extracted to a
+/// per-version cache dir on first use.
+static CONTAINER_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/container");
 
 use crate::agent_runtime;
 use crate::discovery::scan_host_credentials;
@@ -85,7 +91,6 @@ pub struct RunOptions {
 pub fn build_image(image: &str) -> Result<()> {
     check_docker_available()?;
     let container_dir = container_dir()?;
-    let manifest_dir = manifest_dir()?;
 
     println!(
         "[AgentFence] Building images for host architecture: {} (images are platform-specific; rebuild after cloning to a different host).",
@@ -104,19 +109,34 @@ pub fn build_image(image: &str) -> Result<()> {
         bail!("docker build exited with status {status}");
     }
 
-    let helper_image = collector_image_tag(image);
-    let status = Command::new("docker")
-        .arg("build")
-        .arg("--file")
-        .arg(manifest_dir.join("container").join("Collector.Dockerfile"))
-        .arg("--tag")
-        .arg(&helper_image)
-        .arg(&manifest_dir)
-        .status()
-        .context("failed to execute collector image `docker build`")?;
+    // The collector image rebuilds the AgentFence binary inside a container,
+    // so it needs the full Rust source tree as build context. That's only
+    // available in source-tree installs (`cargo install --path .`); prebuilt
+    // binary installs skip this step. The collector is currently only used by
+    // `--monitor strong` on Linux, so binary installs lose nothing on macOS
+    // and lose strong host-side eBPF monitoring on Linux.
+    match dev_source_root() {
+        Some(src_root) => {
+            let helper_image = collector_image_tag(image);
+            let status = Command::new("docker")
+                .arg("build")
+                .arg("--file")
+                .arg(src_root.join("container").join("Collector.Dockerfile"))
+                .arg("--tag")
+                .arg(&helper_image)
+                .arg(&src_root)
+                .status()
+                .context("failed to execute collector image `docker build`")?;
 
-    if !status.success() {
-        bail!("collector image docker build exited with status {status}");
+            if !status.success() {
+                bail!("collector image docker build exited with status {status}");
+            }
+        }
+        None => {
+            println!(
+                "[AgentFence] Skipping collector image build: source tree not available (prebuilt binary install). The collector image is only used by --monitor strong; install from source to enable it."
+            );
+        }
     }
 
     Ok(())
@@ -1357,8 +1377,65 @@ fn agent_auth_env_hints(agent: Agent) -> &'static [&'static str] {
     }
 }
 
-fn manifest_dir() -> Result<PathBuf> {
-    Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+/// Returns the project source root if AgentFence is running from a source-tree
+/// install (e.g. `cargo install --path .` or `cargo run`). For prebuilt binary
+/// installs the compile-time `CARGO_MANIFEST_DIR` path no longer exists on the
+/// host, so this returns `None` and callers fall back to the embedded assets.
+fn dev_source_root() -> Option<PathBuf> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if path.join("Cargo.toml").is_file() && path.join("container").is_dir() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+/// Extracts the embedded `container/` assets to a per-version cache directory
+/// and returns the extraction path. Source-tree installs short-circuit to the
+/// live on-disk copy so dev edits take effect immediately.
+fn extract_container_assets() -> Result<PathBuf> {
+    if let Some(src) = dev_source_root() {
+        return Ok(src.join("container"));
+    }
+
+    let cache_dir = dirs::cache_dir()
+        .context("could not determine user cache directory for container assets")?
+        .join("agentfence")
+        .join("container")
+        .join(env!("CARGO_PKG_VERSION"));
+
+    // Re-extract every time. The asset payload is small (~50KB) and this avoids
+    // any cache-staleness footguns when versions or contents change.
+    if cache_dir.exists() {
+        fs::remove_dir_all(&cache_dir)
+            .with_context(|| format!("failed to clear stale cache dir {}", cache_dir.display()))?;
+    }
+    fs::create_dir_all(&cache_dir)
+        .with_context(|| format!("failed to create cache dir {}", cache_dir.display()))?;
+
+    CONTAINER_ASSETS
+        .extract(&cache_dir)
+        .with_context(|| format!("failed to extract container assets to {}", cache_dir.display()))?;
+
+    // include_dir does not preserve file modes; restore +x on shell scripts so
+    // the in-container entrypoint and bash hooks are executable when COPY'd
+    // into the image.
+    #[cfg(unix)]
+    {
+        for entry in fs::read_dir(&cache_dir)
+            .with_context(|| format!("failed to read cache dir {}", cache_dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("sh") {
+                let mut perms = fs::metadata(&path)?.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&path, perms)?;
+            }
+        }
+    }
+
+    Ok(cache_dir)
 }
 
 pub(crate) fn collector_image_tag(image: &str) -> String {
@@ -1386,17 +1463,7 @@ fn check_docker_available() -> Result<()> {
 }
 
 fn container_dir() -> Result<PathBuf> {
-    let manifest_dir = manifest_dir()?;
-    let path = manifest_dir.join("container");
-
-    if !path.exists() {
-        bail!(
-            "container assets directory is missing at {}",
-            path.display()
-        );
-    }
-
-    Ok(path)
+    extract_container_assets()
 }
 
 fn canonical_dir(path: &Path, label: &str) -> Result<PathBuf> {
