@@ -1,0 +1,1807 @@
+use std::env;
+use std::ffi::OsString;
+use std::fmt::{self, Display};
+use std::fs::{self, OpenOptions};
+use std::io::{self, IsTerminal, Write};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context, Result, anyhow, bail};
+use clap::ValueEnum;
+use serde_json::{Map, Value, json};
+
+use crate::agent_runtime;
+use crate::discovery::scan_host_credentials;
+use crate::monitor::{
+    MonitorMode, MonitoringRequest, monitoring_request_for_mode, run_with_monitoring,
+    select_monitoring_backend,
+};
+
+const AGENTFENCE_CONTAINER_HOME: &str = "/agentfence/home";
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum Agent {
+    Shell,
+    Codex,
+    ClaudeCode,
+    Cursor,
+    Windsurf,
+    Copilot,
+}
+
+impl Display for Agent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            Agent::Shell => "shell",
+            Agent::Codex => "codex",
+            Agent::ClaudeCode => "claude-code",
+            Agent::Cursor => "cursor",
+            Agent::Windsurf => "windsurf",
+            Agent::Copilot => "copilot",
+        };
+
+        f.write_str(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum NetworkMode {
+    Bridge,
+    Host,
+}
+
+impl Display for NetworkMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            NetworkMode::Bridge => "bridge",
+            NetworkMode::Host => "host",
+        };
+
+        f.write_str(value)
+    }
+}
+
+#[derive(Debug)]
+pub struct RunOptions {
+    pub project_dir: PathBuf,
+    pub image: String,
+    pub build_image: bool,
+    pub agent: Option<Agent>,
+    pub ssh_mounts: Vec<PathBuf>,
+    pub cred_mounts: Vec<PathBuf>,
+    pub env_vars: Vec<String>,
+    pub container_name: Option<String>,
+    pub logs_dir: Option<PathBuf>,
+    pub network_mode: NetworkMode,
+    pub monitor: MonitorMode,
+    pub ebpf_exec: bool,
+    pub ebpf_net: bool,
+    pub ebpf_file: bool,
+    pub command: Vec<String>,
+}
+
+pub fn build_image(image: &str) -> Result<()> {
+    check_docker_available()?;
+    let container_dir = container_dir()?;
+    let manifest_dir = manifest_dir()?;
+
+    println!(
+        "[AgentFence] Building images for host architecture: {} (images are platform-specific; rebuild after cloning to a different host).",
+        std::env::consts::ARCH
+    );
+
+    let status = Command::new("docker")
+        .arg("build")
+        .arg("--tag")
+        .arg(image)
+        .arg(&container_dir)
+        .status()
+        .context("failed to execute `docker build`")?;
+
+    if !status.success() {
+        bail!("docker build exited with status {status}");
+    }
+
+    let helper_image = collector_image_tag(image);
+    let status = Command::new("docker")
+        .arg("build")
+        .arg("--file")
+        .arg(manifest_dir.join("container").join("Collector.Dockerfile"))
+        .arg("--tag")
+        .arg(&helper_image)
+        .arg(&manifest_dir)
+        .status()
+        .context("failed to execute collector image `docker build`")?;
+
+    if !status.success() {
+        bail!("collector image docker build exited with status {status}");
+    }
+
+    Ok(())
+}
+
+fn agentfence_images_exist(image: &str) -> Result<bool> {
+    Ok(docker_image_exists(image)? && docker_image_exists(&collector_image_tag(image))?)
+}
+
+fn docker_image_exists(image: &str) -> Result<bool> {
+    let status = Command::new("docker")
+        .arg("image")
+        .arg("inspect")
+        .arg(image)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .with_context(|| format!("failed to inspect docker image `{image}`"))?;
+    Ok(status.success())
+}
+
+pub fn run_container(options: RunOptions) -> Result<()> {
+    check_docker_available()?;
+    let monitoring_request = if options.ebpf_exec || options.ebpf_net || options.ebpf_file {
+        MonitoringRequest {
+            ebpf_exec: options.ebpf_exec,
+            ebpf_net: options.ebpf_net,
+            ebpf_file: options.ebpf_file,
+        }
+    } else {
+        monitoring_request_for_mode(options.monitor)
+    };
+    let monitoring_plan = select_monitoring_backend(monitoring_request, options.monitor)?;
+
+    let project_dir = canonical_dir(&options.project_dir, "--project")?;
+    let logs_dir = prepare_logs_dir(options.logs_dir)?;
+    prepare_session_log_files(&logs_dir)?;
+    let runtime_auth_dir = prepare_runtime_auth_dir(&logs_dir)?;
+    let runtime_container_home = prepare_runtime_container_home(&runtime_auth_dir)?;
+    let host_scan = scan_host_credentials(&project_dir, &logs_dir)?;
+    let selected_agent = match options.agent {
+        Some(agent) => {
+            println!("[AgentFence] Agent override requested: {agent}");
+            agent
+        }
+        None => {
+            let detection = agent_runtime::detect_agent(&project_dir, &host_scan);
+            println!(
+                "[AgentFence] Auto-selected agent: {} ({})",
+                detection.agent, detection.reason
+            );
+            detection.agent
+        }
+    };
+    let auto_ssh_mounts = auto_discovered_ssh_mounts(&host_scan)?;
+
+    println!("[AgentFence] Starting credential discovery on host...");
+    if host_scan.findings.is_empty() {
+        println!("[AgentFence] Host scan complete. No credential candidates found.");
+    } else {
+        for finding in &host_scan.findings {
+            println!(
+                "[AgentFence] Found: {} ({})",
+                finding.classification, finding.path
+            );
+        }
+        println!(
+            "[AgentFence] Host scan complete. {} credential candidates found.",
+            host_scan.findings.len()
+        );
+    }
+    println!(
+        "[AgentFence] Host scan report: {}",
+        logs_dir.join("host_scan.json").display()
+    );
+    if let Some(notice) = monitoring_plan.startup_notice() {
+        println!("{notice}");
+    }
+    if !auto_ssh_mounts.is_empty() {
+        println!(
+            "[AgentFence] Auto-mounting {} discovered SSH key(s) for auditing.",
+            auto_ssh_mounts.len()
+        );
+    }
+
+    if options.build_image || !agentfence_images_exist(&options.image)? {
+        build_image(&options.image)?;
+    }
+
+    let container_name = options
+        .container_name
+        .unwrap_or_else(|| default_container_name(&project_dir));
+    let workspace_path = container_workspace_path(&project_dir);
+
+    let mut command = Command::new("docker");
+    command.arg("run").arg("--rm");
+
+    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+        command.arg("-it");
+    }
+    command.arg("--name").arg(&container_name);
+    command.arg("--hostname").arg("agentfence");
+    command.arg("--network").arg(options.network_mode.to_string());
+    if options.network_mode == NetworkMode::Host {
+        println!(
+            "[AgentFence] Network mode: host (container shares the host network namespace)"
+        );
+        if cfg!(target_os = "macos") {
+            println!(
+                "[AgentFence] Note: on macOS, --network host shares the Docker Desktop VM network, not the Mac host network."
+            );
+        }
+    }
+    command.arg("--cap-drop").arg("ALL");
+    command.arg("--security-opt").arg("no-new-privileges");
+    command.arg("--read-only");
+    command.arg("--tmpfs").arg("/tmp:rw,nosuid");
+    command.arg("--tmpfs").arg("/run:rw,nosuid");
+    if let Some(user) = current_host_user_spec() {
+        command.arg("--user").arg(user);
+    }
+
+    add_bind_mount(&mut command, &project_dir, &workspace_path, false);
+    if workspace_path != "/workspace" {
+        add_bind_mount(&mut command, &project_dir, "/workspace", false);
+    }
+    add_bind_mount(&mut command, &logs_dir, "/var/log/agentfence", false);
+    add_bind_mount(
+        &mut command,
+        &runtime_container_home,
+        AGENTFENCE_CONTAINER_HOME,
+        false,
+    );
+
+    let mut ssh_sources = options.ssh_mounts.clone();
+    for path in auto_ssh_mounts {
+        if !ssh_sources.iter().any(|existing| existing == &path) {
+            ssh_sources.push(path);
+        }
+    }
+
+    for mount in materialize_mounts(&ssh_sources, MountKind::Ssh)? {
+        add_bind_mount(
+            &mut command,
+            &mount.host_path,
+            &mount.container_path,
+            mount.readonly,
+        );
+    }
+
+    for mount in materialize_mounts(&options.cred_mounts, MountKind::Cred)? {
+        add_bind_mount(
+            &mut command,
+            &mount.host_path,
+            &mount.container_path,
+            mount.readonly,
+        );
+    }
+
+    let auto_agent_auth_mounts =
+        auto_discovered_agent_auth_mounts(selected_agent, &project_dir, &runtime_auth_dir)?;
+    if !auto_agent_auth_mounts.is_empty() {
+        let mounted_targets = auto_agent_auth_mounts
+            .iter()
+            .map(|mount| mount.container_path.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "[AgentFence] Auto-mounting {} agent auth artifact(s): {}",
+            auto_agent_auth_mounts.len(),
+            mounted_targets
+        );
+    }
+    if selected_agent == Agent::ClaudeCode && !auto_agent_auth_mounts.is_empty() {
+        println!(
+            "[AgentFence] Note: workspace trust auto-accepted for container session."
+        );
+    }
+    for mount in auto_agent_auth_mounts {
+        add_bind_mount(
+            &mut command,
+            &mount.host_path,
+            &mount.container_path,
+            mount.readonly,
+        );
+    }
+
+    let auto_agent_runtime_mounts = auto_discovered_agent_runtime_mounts(selected_agent)?;
+    if !auto_agent_runtime_mounts.is_empty() {
+        let mounted_targets = auto_agent_runtime_mounts
+            .iter()
+            .map(|mount| mount.container_path.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "[AgentFence] Auto-mounting {} agent runtime artifact(s): {}",
+            auto_agent_runtime_mounts.len(),
+            mounted_targets
+        );
+    }
+    for mount in auto_agent_runtime_mounts {
+        add_bind_mount(
+            &mut command,
+            &mount.host_path,
+            &mount.container_path,
+            mount.readonly,
+        );
+    }
+
+    let auto_env_vars = auto_discovered_env_vars(&host_scan, selected_agent);
+    if !auto_env_vars.is_empty() {
+        println!(
+            "[AgentFence] Auto-passing through {} host credential env var(s): {}",
+            auto_env_vars.len(),
+            auto_env_vars.join(", ")
+        );
+    }
+
+    let mut env_vars = options.env_vars.clone();
+    for name in auto_env_vars {
+        if !env_vars.iter().any(|existing| existing == &name) {
+            env_vars.push(name);
+        }
+    }
+
+    for name in &env_vars {
+        let value = env::var(name)
+            .with_context(|| format!("environment variable `{name}` is not set on the host"))?;
+        command.arg("--env").arg(format!("{name}={value}"));
+    }
+
+    command
+        .arg("--env")
+        .arg(format!("AGENTFENCE_AGENT={}", selected_agent));
+    command
+        .arg("--env")
+        .arg(format!("AGENTFENCE_WORKSPACE={workspace_path}"));
+    command
+        .arg("--env")
+        .arg(format!("HOME={AGENTFENCE_CONTAINER_HOME}"));
+    command.arg("--env").arg(format!(
+        "PATH={AGENTFENCE_CONTAINER_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    ));
+    if let Ok(term) = env::var("TERM") {
+        if !term.is_empty() {
+            command.arg("--env").arg(format!("TERM={term}"));
+        }
+    }
+    if let Ok(colorterm) = env::var("COLORTERM") {
+        if !colorterm.is_empty() {
+            command.arg("--env").arg(format!("COLORTERM={colorterm}"));
+        }
+    }
+    if monitoring_request.ebpf_net {
+        command
+            .arg("--env")
+            .arg("AGENTFENCE_DISABLE_NETWORK_WATCHER=1");
+    }
+    if monitoring_request.ebpf_file {
+        command
+            .arg("--env")
+            .arg("AGENTFENCE_DISABLE_FILE_ACCESS_AUDIT=1");
+    }
+    if monitoring_request.any_host_collectors() {
+        command
+            .arg("--env")
+            .arg("AGENTFENCE_MONITORING_STARTUP_GRACE_MS=1000");
+    }
+    if monitoring_request.ebpf_exec {
+        command
+            .arg("--env")
+            .arg("AGENTFENCE_HOST_EXEC_ENV_AUDIT=1");
+    }
+    command.arg(&options.image);
+
+    let launch_command = if options.command.is_empty() {
+        default_launch_command(selected_agent, &project_dir, &workspace_path)?
+    } else {
+        options.command.clone()
+    };
+
+    if !launch_command.is_empty() {
+        command.args(&launch_command);
+    }
+
+    if monitoring_request.any_host_collectors() {
+        if monitoring_request.ebpf_exec {
+            println!("[AgentFence] Host eBPF exec collector: requested");
+            println!(
+                "[AgentFence] Host eBPF exec log: {}",
+                logs_dir.join("ebpf_exec.jsonl").display()
+            );
+        }
+        if monitoring_request.ebpf_net {
+            println!("[AgentFence] Host eBPF connect collector: requested");
+            println!(
+                "[AgentFence] Host eBPF connect log: {}",
+                logs_dir.join("ebpf_connect.jsonl").display()
+            );
+        }
+        if monitoring_request.ebpf_file {
+            println!("[AgentFence] Host eBPF file collector: requested");
+            println!(
+                "[AgentFence] Host eBPF file log: {}",
+                logs_dir.join("ebpf_file.jsonl").display()
+            );
+        }
+        let status = run_with_monitoring(
+            monitoring_plan,
+            command,
+            &options.image,
+            &container_name,
+            &logs_dir,
+        )?;
+        return finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status);
+    }
+
+    let status = run_with_monitoring(
+        monitoring_plan,
+        command,
+        &options.image,
+        &container_name,
+        &logs_dir,
+    )?;
+
+    finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status)
+}
+
+fn finalize_and_cleanup_session(
+    agent: Agent,
+    project_dir: &Path,
+    runtime_auth_dir: &Path,
+    status: std::process::ExitStatus,
+) -> Result<()> {
+    let finalize_result = finalize_session(agent, project_dir, runtime_auth_dir, status);
+    let cleanup_result = cleanup_runtime_auth_dir(runtime_auth_dir);
+
+    match (finalize_result, cleanup_result) {
+        (Err(err), _) => Err(err),
+        (Ok(()), Err(err)) => Err(err),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
+fn finalize_session(
+    agent: Agent,
+    project_dir: &Path,
+    runtime_auth_dir: &Path,
+    status: std::process::ExitStatus,
+) -> Result<()> {
+    if !status.success() {
+        bail!("docker run exited with status {status}");
+    }
+
+    if agent == Agent::ClaudeCode {
+        sync_claude_project_session_back(project_dir, runtime_auth_dir)?;
+    }
+    if agent == Agent::Codex {
+        sync_codex_session_back(project_dir, runtime_auth_dir)?;
+    }
+
+    Ok(())
+}
+
+fn auto_discovered_ssh_mounts(
+    report: &crate::discovery::HostScanReport,
+) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    let key_hints = &report.project_context.suggested_ssh_key_names;
+    let remote_hosts = &report.project_context.git_remote_hosts;
+
+    for finding in &report.findings {
+        if finding.mount_kind.as_deref() != Some("ssh") {
+            continue;
+        }
+        let path = PathBuf::from(&finding.path);
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+
+        let exact_match = key_hints.iter().any(|hint| hint == file_name);
+        let github_fallback =
+            key_hints.is_empty() && remote_hosts.iter().any(|host| host == "github.com")
+                && matches!(file_name, "id_ed25519" | "id_rsa" | "condef_git_key");
+
+        if exact_match || github_fallback {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
+}
+
+fn auto_discovered_env_vars(
+    report: &crate::discovery::HostScanReport,
+    agent: Agent,
+) -> Vec<String> {
+    let mut names = Vec::new();
+    names.extend(agent_auth_env_hints(agent).iter().map(|name| (*name).to_string()));
+    names.extend(report.project_context.referenced_env_vars.iter().cloned());
+    names.sort();
+    names.dedup();
+    names
+        .into_iter()
+        .filter(|name| env::var_os(name).is_some())
+        .collect()
+}
+
+fn auto_discovered_agent_runtime_mounts(agent: Agent) -> Result<Vec<MaterializedMount>> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(Vec::new());
+    };
+
+    let mut mounts = Vec::new();
+    if agent == Agent::ClaudeCode && cfg!(target_os = "linux") {
+        let native_claude = home.join(".local").join("bin").join("claude");
+        if native_claude.exists() {
+            let host_path = canonical_file(&native_claude)?;
+            mounts.push(MaterializedMount {
+                host_path: host_path.clone(),
+                container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.local/bin/claude"),
+                readonly: true,
+            });
+            mounts.push(MaterializedMount {
+                host_path,
+                container_path: "/usr/local/bin/claude".to_string(),
+                readonly: true,
+            });
+        }
+    }
+    if agent == Agent::Codex && cfg!(target_os = "linux") {
+        if let Some(codex_binary) = host_codex_native_binary()? {
+            mounts.push(MaterializedMount {
+                host_path: codex_binary,
+                container_path: "/usr/local/bin/codex".to_string(),
+                readonly: true,
+            });
+        }
+        if let Some(rg_binary) = host_codex_native_rg()? {
+            mounts.push(MaterializedMount {
+                host_path: rg_binary,
+                container_path: "/usr/local/bin/rg".to_string(),
+                readonly: true,
+            });
+        }
+    }
+
+    Ok(mounts)
+}
+
+fn host_executable(name: &str) -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+fn host_codex_package_root() -> Result<Option<PathBuf>> {
+    let Some(codex) = host_executable("codex") else {
+        return Ok(None);
+    };
+    let codex = canonical_file(&codex)?;
+    if codex.file_name().and_then(|name| name.to_str()) != Some("codex.js") {
+        return Ok(None);
+    }
+    Ok(codex
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf))
+}
+
+fn host_codex_native_binary() -> Result<Option<PathBuf>> {
+    let Some(package_root) = host_codex_package_root()? else {
+        return Ok(None);
+    };
+    let candidate = package_root
+        .join("node_modules")
+        .join("@openai")
+        .join("codex-linux-x64")
+        .join("vendor")
+        .join("x86_64-unknown-linux-musl")
+        .join("codex")
+        .join("codex");
+
+    if candidate.is_file() {
+        return Ok(Some(canonical_file(&candidate)?));
+    }
+    Ok(None)
+}
+
+fn host_codex_native_rg() -> Result<Option<PathBuf>> {
+    let Some(package_root) = host_codex_package_root()? else {
+        return Ok(None);
+    };
+    let candidate = package_root
+        .join("node_modules")
+        .join("@openai")
+        .join("codex-linux-x64")
+        .join("vendor")
+        .join("x86_64-unknown-linux-musl")
+        .join("path")
+        .join("rg");
+
+    if candidate.is_file() {
+        return Ok(Some(canonical_file(&candidate)?));
+    }
+    Ok(None)
+}
+
+fn auto_discovered_agent_auth_mounts(
+    agent: Agent,
+    project_dir: &Path,
+    logs_dir: &Path,
+) -> Result<Vec<MaterializedMount>> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(Vec::new());
+    };
+
+    match agent {
+        Agent::ClaudeCode => materialize_claude_auth_mounts(&home, project_dir, logs_dir),
+        Agent::Codex => materialize_codex_auth_mounts(&home, project_dir, logs_dir),
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn materialize_codex_auth_mounts(
+    home: &Path,
+    project_dir: &Path,
+    runtime_auth_dir: &Path,
+) -> Result<Vec<MaterializedMount>> {
+    let source_dir = home.join(".codex");
+    let target_dir = runtime_auth_dir.join("codex").join(".codex");
+    if !source_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    fs::create_dir_all(&target_dir)
+        .with_context(|| format!("failed to create {}", target_dir.display()))?;
+    for file_name in ["auth.json", "config.toml", "version.json"] {
+        copy_file_if_exists(&source_dir.join(file_name), &target_dir.join(file_name))?;
+    }
+    copy_codex_project_history(
+        &source_dir.join("history.jsonl"),
+        &target_dir.join("history.jsonl"),
+        &project_dir.display().to_string(),
+        &container_workspace_path(project_dir),
+    )?;
+    copy_codex_project_sessions(
+        &source_dir.join("sessions"),
+        &target_dir.join("sessions"),
+        &project_dir.display().to_string(),
+        &container_workspace_path(project_dir),
+    )?;
+    set_codex_auth_permissions(&target_dir)?;
+
+    Ok(vec![MaterializedMount {
+        host_path: canonical_dir(&target_dir, "session Codex auth mount")?,
+        container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.codex"),
+        readonly: false,
+    }])
+}
+
+fn materialize_claude_auth_mounts(
+    home: &Path,
+    project_dir: &Path,
+    runtime_auth_dir: &Path,
+) -> Result<Vec<MaterializedMount>> {
+    let source_dir = home.join(".claude");
+    let source_config = home.join(".claude.json");
+    let session_root = runtime_auth_dir.join("claude");
+    let target_dir = session_root.join(".claude");
+    let target_config = session_root.join(".claude.json");
+
+    if source_dir.is_dir() {
+        fs::create_dir_all(&target_dir)
+            .with_context(|| format!("failed to create {}", target_dir.display()))?;
+        copy_file_if_exists(
+            &source_dir.join(".credentials.json"),
+            &target_dir.join(".credentials.json"),
+        )?;
+        copy_file_if_exists(
+            &source_dir.join(".current-session"),
+            &target_dir.join(".current-session"),
+        )?;
+        copy_file_if_exists(
+            &source_dir.join("history.jsonl"),
+            &target_dir.join("history.jsonl"),
+        )?;
+        fs::create_dir_all(target_dir.join("session-env"))
+            .with_context(|| format!("failed to create {}", target_dir.join("session-env").display()))?;
+        mirror_claude_project_sessions(&source_dir, &target_dir, project_dir)?;
+        set_claude_auth_permissions(&target_dir, project_dir)?;
+    }
+
+    if source_config.is_file() {
+        if let Some(parent) = target_config.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        fs::copy(&source_config, &target_config).with_context(|| {
+            format!(
+                "failed to copy Claude config {} -> {}",
+                source_config.display(),
+                target_config.display()
+            )
+        })?;
+        seed_workspace_trust(&target_config, project_dir)?;
+        #[cfg(unix)]
+        set_private_file(&target_config)?;
+    }
+
+    let mut mounts = Vec::new();
+    if target_dir.is_dir() {
+        mounts.push(MaterializedMount {
+            host_path: canonical_dir(&target_dir, "session Claude auth mount")?,
+            container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.claude"),
+            readonly: false,
+        });
+    }
+    if target_config.is_file() {
+        mounts.push(MaterializedMount {
+            host_path: canonical_file(&target_config)?,
+            container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.claude.json"),
+            readonly: false,
+        });
+    }
+
+    Ok(mounts)
+}
+
+fn default_launch_command(
+    agent: Agent,
+    project_dir: &Path,
+    container_project_path: &str,
+) -> Result<Vec<String>> {
+    if agent == Agent::ClaudeCode {
+        if let Some(session_id) = host_claude_last_session_id(project_dir)? {
+            println!(
+                "[AgentFence] Auto-resuming Claude session for {} as {}: {}",
+                project_dir.display(),
+                container_project_path,
+                session_id
+            );
+            return Ok(vec![
+                "claude".to_string(),
+                "--resume".to_string(),
+                session_id,
+            ]);
+        }
+    }
+
+    Ok(agent_runtime::default_command(agent).unwrap_or_default())
+}
+
+fn host_claude_last_session_id(project_dir: &Path) -> Result<Option<String>> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(None);
+    };
+
+    if let Some(session_id) = host_claude_latest_history_session_id(&home, project_dir)? {
+        return Ok(Some(session_id));
+    }
+
+    let config_path = home.join(".claude.json");
+    if !config_path.is_file() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&config_path)
+        .with_context(|| format!("failed to read {}", config_path.display()))?;
+    let root: Value = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse {}", config_path.display()))?;
+    let source_key = project_dir.display().to_string();
+
+    Ok(root
+        .get("projects")
+        .and_then(Value::as_object)
+        .and_then(|projects| projects.get(&source_key))
+        .and_then(Value::as_object)
+        .and_then(|project| project.get("lastSessionId"))
+        .and_then(Value::as_str)
+        .map(str::to_string))
+}
+
+fn host_claude_latest_history_session_id(
+    home: &Path,
+    project_dir: &Path,
+) -> Result<Option<String>> {
+    let history_path = home.join(".claude").join("history.jsonl");
+    if !history_path.is_file() {
+        return Ok(None);
+    }
+
+    let source_key = project_dir.display().to_string();
+    let content = fs::read_to_string(&history_path)
+        .with_context(|| format!("failed to read {}", history_path.display()))?;
+    let mut latest: Option<(u64, String)> = None;
+
+    for line in content.lines() {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if record.get("project").and_then(Value::as_str) != Some(source_key.as_str()) {
+            continue;
+        }
+        let Some(session_id) = record.get("sessionId").and_then(Value::as_str) else {
+            continue;
+        };
+        let timestamp = record.get("timestamp").and_then(Value::as_u64).unwrap_or(0);
+
+        if latest
+            .as_ref()
+            .is_none_or(|(latest_timestamp, _)| timestamp >= *latest_timestamp)
+        {
+            latest = Some((timestamp, session_id.to_string()));
+        }
+    }
+
+    Ok(latest.map(|(_, session_id)| session_id))
+}
+
+fn mirror_claude_project_sessions(
+    source_claude_dir: &Path,
+    target_claude_dir: &Path,
+    project_dir: &Path,
+) -> Result<()> {
+    let source_key = project_dir.display().to_string();
+    let container_key = container_workspace_path(project_dir);
+    let source_dir = source_claude_dir
+        .join("projects")
+        .join(claude_project_slug(&source_key));
+    let container_project_dir = target_claude_dir
+        .join("projects")
+        .join(claude_project_slug(&container_key));
+
+    if !source_dir.is_dir() {
+        return Ok(());
+    }
+
+    copy_dir_recursive(&source_dir, &container_project_dir)
+        .with_context(|| format!("failed to mirror Claude project session files from {}", source_dir.display()))?;
+
+    let workspace_alias_dir = target_claude_dir
+        .join("projects")
+        .join(claude_project_slug("/workspace"));
+    if workspace_alias_dir != container_project_dir {
+        copy_dir_recursive(&source_dir, &workspace_alias_dir).with_context(|| {
+            format!(
+                "failed to mirror Claude workspace-alias session files from {}",
+                source_dir.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn sync_claude_project_session_back(project_dir: &Path, runtime_auth_dir: &Path) -> Result<()> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(());
+    };
+
+    let session_claude_dir = runtime_auth_dir.join("claude").join(".claude");
+    let session_config = runtime_auth_dir.join("claude").join(".claude.json");
+    if !session_claude_dir.is_dir() {
+        return Ok(());
+    }
+
+    let host_project_slug = claude_project_slug(&project_dir.display().to_string());
+    let container_slug = claude_project_slug(&container_workspace_path(project_dir));
+    let session_container_dir = session_claude_dir.join("projects").join(container_slug);
+    let fallback_workspace_dir = session_claude_dir
+        .join("projects")
+        .join(claude_project_slug("/workspace"));
+    let host_project_dir = home.join(".claude").join("projects").join(host_project_slug);
+
+    let sync_source_dir = if session_container_dir.is_dir() {
+        Some(session_container_dir)
+    } else if fallback_workspace_dir.is_dir() {
+        Some(fallback_workspace_dir)
+    } else {
+        None
+    };
+
+    if let Some(sync_source_dir) = sync_source_dir {
+        fs::create_dir_all(&host_project_dir)
+            .with_context(|| format!("failed to create {}", host_project_dir.display()))?;
+        copy_dir_recursive(&sync_source_dir, &host_project_dir).with_context(|| {
+            format!(
+                "failed to sync Claude workspace session files back to {}",
+                host_project_dir.display()
+            )
+        })?;
+    }
+
+    sync_claude_project_config_back(&session_config, project_dir)?;
+
+    println!(
+        "[AgentFence] Synced Claude project session state back to {}",
+        project_dir.display()
+    );
+
+    Ok(())
+}
+
+fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) -> Result<()> {
+    if !session_config.is_file() {
+        return Ok(());
+    }
+
+    let Some(home) = dirs::home_dir() else {
+        return Ok(());
+    };
+    let host_config = home.join(".claude.json");
+    if !host_config.is_file() {
+        return Ok(());
+    }
+
+    let session_content = fs::read_to_string(session_config)
+        .with_context(|| format!("failed to read {}", session_config.display()))?;
+    let host_content = fs::read_to_string(&host_config)
+        .with_context(|| format!("failed to read {}", host_config.display()))?;
+    let session_root: Value = serde_json::from_str(&session_content)
+        .with_context(|| format!("failed to parse {}", session_config.display()))?;
+    let mut host_root: Value = serde_json::from_str(&host_content)
+        .with_context(|| format!("failed to parse {}", host_config.display()))?;
+
+    let container_key = container_workspace_path(project_dir);
+    let Some(session_project) = session_root
+        .get("projects")
+        .and_then(Value::as_object)
+        .and_then(|projects| {
+            projects
+                .get(&container_key)
+                .or_else(|| projects.get("/workspace"))
+        })
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    let Some(host_obj) = host_root.as_object_mut() else {
+        return Ok(());
+    };
+    let projects = host_obj
+        .entry("projects")
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(projects_obj) = projects.as_object_mut() else {
+        return Ok(());
+    };
+
+    projects_obj.insert(project_dir.display().to_string(), session_project);
+
+    fs::write(
+        &host_config,
+        serde_json::to_string_pretty(&host_root)
+            .context("failed to serialize host Claude config")?
+            + "\n",
+    )
+    .with_context(|| format!("failed to write {}", host_config.display()))?;
+
+    Ok(())
+}
+
+fn sync_codex_session_back(project_dir: &Path, runtime_auth_dir: &Path) -> Result<()> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(());
+    };
+    let session_codex_dir = runtime_auth_dir.join("codex").join(".codex");
+    if !session_codex_dir.is_dir() {
+        return Ok(());
+    }
+
+    let host_codex_dir = home.join(".codex");
+    fs::create_dir_all(&host_codex_dir)
+        .with_context(|| format!("failed to create {}", host_codex_dir.display()))?;
+
+    append_codex_project_history_back(
+        &session_codex_dir.join("history.jsonl"),
+        &host_codex_dir.join("history.jsonl"),
+        &container_workspace_path(project_dir),
+        &project_dir.display().to_string(),
+    )?;
+    sync_codex_project_sessions_back(
+        &session_codex_dir.join("sessions"),
+        &host_codex_dir.join("sessions"),
+        &container_workspace_path(project_dir),
+        &project_dir.display().to_string(),
+    )?;
+
+    println!(
+        "[AgentFence] Synced Codex project session state back to {}",
+        project_dir.display()
+    );
+
+    Ok(())
+}
+
+fn copy_codex_project_history(source: &Path, target: &Path, host_project: &str, container_project: &str) -> Result<()> {
+    if !source.is_file() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(source)
+        .with_context(|| format!("failed to read Codex history {}", source.display()))?;
+    let mut output = String::new();
+    for line in content.lines() {
+        if codex_record_references_cwd(line, host_project) {
+            output.push_str(&line.replace(host_project, container_project));
+            output.push('\n');
+        }
+    }
+
+    if output.is_empty() {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(target, output)
+        .with_context(|| format!("failed to write Codex project history {}", target.display()))
+}
+
+fn append_codex_project_history_back(source: &Path, target: &Path, container_project: &str, host_project: &str) -> Result<()> {
+    if !source.is_file() {
+        return Ok(());
+    }
+
+    let source_content = fs::read_to_string(source)
+        .with_context(|| format!("failed to read Codex session history {}", source.display()))?;
+    let target_content = fs::read_to_string(target).unwrap_or_default();
+    let mut seen = target_content.lines().map(str::to_string).collect::<std::collections::HashSet<_>>();
+    let mut additions = String::new();
+
+    for line in source_content.lines() {
+        if !codex_record_references_cwd(line, container_project) {
+            continue;
+        }
+        let rewritten = line.replace(container_project, host_project);
+        if seen.insert(rewritten.clone()) {
+            additions.push_str(&rewritten);
+            additions.push('\n');
+        }
+    }
+
+    if additions.is_empty() {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(target)
+        .with_context(|| format!("failed to open Codex history {}", target.display()))?;
+    file.write_all(additions.as_bytes())
+        .with_context(|| format!("failed to append Codex history {}", target.display()))
+}
+
+fn copy_codex_project_sessions(source: &Path, target: &Path, host_project: &str, container_project: &str) -> Result<()> {
+    copy_codex_project_session_tree(source, source, target, host_project, container_project)
+}
+
+fn copy_codex_project_session_tree(
+    root: &Path,
+    current: &Path,
+    target_root: &Path,
+    host_project: &str,
+    container_project: &str,
+) -> Result<()> {
+    if !current.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(current).with_context(|| format!("failed to read {}", current.display()))? {
+        let entry = entry.with_context(|| format!("failed to read directory entry in {}", current.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            copy_codex_project_session_tree(root, &path, target_root, host_project, container_project)?;
+            continue;
+        }
+        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+            continue;
+        }
+        if !codex_session_file_references_cwd(&path, host_project)? {
+            continue;
+        }
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        let target = target_root.join(relative);
+        copy_text_file_replacing(&path, &target, host_project, container_project)?;
+    }
+    Ok(())
+}
+
+fn sync_codex_project_sessions_back(source: &Path, target: &Path, container_project: &str, host_project: &str) -> Result<()> {
+    copy_codex_project_session_tree(source, source, target, container_project, host_project)
+}
+
+fn codex_session_file_references_cwd(path: &Path, cwd: &str) -> Result<bool> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("failed to read Codex session {}", path.display()))?;
+    Ok(content.lines().any(|line| codex_record_references_cwd(line, cwd)))
+}
+
+fn codex_record_references_cwd(line: &str, cwd: &str) -> bool {
+    serde_json::from_str::<Value>(line)
+        .ok()
+        .and_then(|record| {
+            record
+                .get("payload")
+                .and_then(|payload| payload.get("cwd"))
+                .and_then(Value::as_str)
+                .map(|value| value == cwd)
+        })
+        .unwrap_or(false)
+}
+
+fn copy_text_file_replacing(source: &Path, target: &Path, from: &str, to: &str) -> Result<()> {
+    let content = fs::read_to_string(source)
+        .with_context(|| format!("failed to read {}", source.display()))?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(target, content.replace(from, to))
+        .with_context(|| format!("failed to write {}", target.display()))
+}
+
+fn claude_project_slug(path: &str) -> String {
+    path.replace('/', "-")
+}
+
+fn seed_workspace_trust(config_path: &Path, project_dir: &Path) -> Result<()> {
+    let content = fs::read_to_string(config_path)
+        .with_context(|| format!("failed to read {}", config_path.display()))?;
+    let mut root: Value = serde_json::from_str(&content)
+        .with_context(|| format!("failed to parse {}", config_path.display()))?;
+
+    let Some(root_obj) = root.as_object_mut() else {
+        return Ok(());
+    };
+
+    let projects = root_obj
+        .entry("projects")
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(projects_obj) = projects.as_object_mut() else {
+        return Ok(());
+    };
+
+    let source_key = project_dir.display().to_string();
+    let mut workspace_entry = projects_obj
+        .get(&source_key)
+        .cloned()
+        .unwrap_or_else(default_workspace_project_state);
+
+    let Some(workspace_obj) = workspace_entry.as_object_mut() else {
+        return Ok(());
+    };
+    workspace_obj.insert("hasTrustDialogAccepted".to_string(), Value::Bool(true));
+    workspace_obj.insert("projectOnboardingSeenCount".to_string(), json!(1));
+    workspace_obj.insert("hasCompletedProjectOnboarding".to_string(), Value::Bool(true));
+
+    projects_obj.insert(container_workspace_path(project_dir), workspace_entry.clone());
+    projects_obj.insert("/workspace".to_string(), workspace_entry);
+
+    fs::write(
+        config_path,
+        serde_json::to_string_pretty(&root)
+            .context("failed to serialize seeded Claude config")?
+            + "\n",
+    )
+    .with_context(|| format!("failed to write {}", config_path.display()))?;
+
+    Ok(())
+}
+
+fn default_workspace_project_state() -> Value {
+    json!({
+        "allowedTools": [],
+        "mcpContextUris": [],
+        "mcpServers": {},
+        "enabledMcpjsonServers": [],
+        "disabledMcpjsonServers": [],
+        "hasTrustDialogAccepted": true,
+        "projectOnboardingSeenCount": 1,
+        "hasClaudeMdExternalIncludesApproved": false,
+        "hasClaudeMdExternalIncludesWarningShown": false,
+        "hasCompletedProjectOnboarding": true
+    })
+}
+
+fn copy_dir_recursive(source: &Path, target: &Path) -> Result<()> {
+    fs::create_dir_all(target)
+        .with_context(|| format!("failed to create {}", target.display()))?;
+
+    for entry in fs::read_dir(source)
+        .with_context(|| format!("failed to read directory {}", source.display()))?
+    {
+        let entry =
+            entry.with_context(|| format!("failed to read directory entry in {}", source.display()))?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("failed to stat {}", source_path.display()))?;
+
+        if file_type.is_dir() {
+            copy_dir_recursive(&source_path, &target_path)?;
+        } else if file_type.is_file() {
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+            }
+            fs::copy(&source_path, &target_path).with_context(|| {
+                format!(
+                    "failed to copy auth/session artifact {} -> {}",
+                    source_path.display(),
+                    target_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn copy_file_if_exists(source: &Path, target: &Path) -> Result<()> {
+    if !source.is_file() {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::copy(source, target)
+        .with_context(|| format!("failed to copy {} -> {}", source.display(), target.display()))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_claude_auth_permissions(claude_dir: &Path, project_dir: &Path) -> Result<()> {
+    set_private_dir(claude_dir)?;
+    set_private_file(&claude_dir.join(".credentials.json"))?;
+    set_private_file(&claude_dir.join(".current-session"))?;
+    set_private_file(&claude_dir.join("history.jsonl"))?;
+    set_recursive_permissions(&claude_dir.join("session-env"), 0o700, 0o600)?;
+
+    let project_root = claude_dir.join("projects");
+    set_private_dir(&project_root)?;
+    let container_project_dir = project_root.join(claude_project_slug(&container_workspace_path(project_dir)));
+    if container_project_dir.exists() {
+        set_recursive_permissions(&container_project_dir, 0o700, 0o600)?;
+    }
+    let workspace_alias_dir = project_root.join(claude_project_slug("/workspace"));
+    if workspace_alias_dir.exists() {
+        set_recursive_permissions(&workspace_alias_dir, 0o700, 0o600)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_claude_auth_permissions(_claude_dir: &Path, _project_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_codex_auth_permissions(codex_dir: &Path) -> Result<()> {
+    set_recursive_permissions(codex_dir, 0o700, 0o600)?;
+    set_private_file(&codex_dir.join("auth.json"))?;
+    set_private_file(&codex_dir.join("config.toml"))?;
+    set_private_file(&codex_dir.join("version.json"))?;
+    set_private_file(&codex_dir.join("history.jsonl"))?;
+    set_recursive_permissions(&codex_dir.join("sessions"), 0o700, 0o600)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_codex_auth_permissions(_codex_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_dir(path: &Path) -> Result<()> {
+    if path.is_dir() {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_file(path: &Path) -> Result<()> {
+    if path.is_file() {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_recursive_permissions(path: &Path, dir_mode: u32, file_mode: u32) -> Result<()> {
+    if path.is_dir() {
+        fs::set_permissions(path, fs::Permissions::from_mode(dir_mode))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+        for entry in fs::read_dir(path)
+            .with_context(|| format!("failed to read directory {}", path.display()))?
+        {
+            let entry = entry
+                .with_context(|| format!("failed to read directory entry in {}", path.display()))?;
+            set_recursive_permissions(&entry.path(), dir_mode, file_mode)?;
+        }
+    } else if path.is_file() {
+        fs::set_permissions(path, fs::Permissions::from_mode(file_mode))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_recursive_permissions(_path: &Path, _dir_mode: u32, _file_mode: u32) -> Result<()> {
+    Ok(())
+}
+
+fn agent_auth_env_hints(agent: Agent) -> &'static [&'static str] {
+    match agent {
+        Agent::Shell => &[],
+        Agent::Codex => &[],
+        Agent::ClaudeCode => &[],
+        Agent::Cursor => &["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"],
+        Agent::Windsurf => &["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
+        Agent::Copilot => &["GH_TOKEN", "GITHUB_TOKEN"],
+    }
+}
+
+fn manifest_dir() -> Result<PathBuf> {
+    Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+}
+
+pub(crate) fn collector_image_tag(image: &str) -> String {
+    match image.rsplit_once(':') {
+        Some((repo, tag)) => format!("{repo}-collector:{tag}"),
+        None => format!("{image}-collector:dev"),
+    }
+}
+
+fn check_docker_available() -> Result<()> {
+    match Command::new("docker")
+        .arg("info")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+    {
+        Ok(status) if status.success() => Ok(()),
+        Ok(_) => bail!(
+            "Docker daemon is not running. Start Docker Desktop or the Docker service and try again."
+        ),
+        Err(_) => bail!(
+            "Docker is not installed or not in PATH. Install Docker from https://docs.docker.com/get-docker/ and try again."
+        ),
+    }
+}
+
+fn container_dir() -> Result<PathBuf> {
+    let manifest_dir = manifest_dir()?;
+    let path = manifest_dir.join("container");
+
+    if !path.exists() {
+        bail!(
+            "container assets directory is missing at {}",
+            path.display()
+        );
+    }
+
+    Ok(path)
+}
+
+fn canonical_dir(path: &Path, label: &str) -> Result<PathBuf> {
+    let canonical = fs::canonicalize(path)
+        .with_context(|| format!("failed to resolve {label} path {}", path.display()))?;
+
+    if !canonical.is_dir() {
+        bail!("{label} must reference a directory: {}", canonical.display());
+    }
+
+    Ok(canonical)
+}
+
+fn canonical_file(path: &Path) -> Result<PathBuf> {
+    let canonical =
+        fs::canonicalize(path).with_context(|| format!("failed to resolve {}", path.display()))?;
+
+    if !canonical.is_file() {
+        bail!("mount source must be a file: {}", canonical.display());
+    }
+
+    Ok(canonical)
+}
+
+fn prepare_logs_dir(explicit: Option<PathBuf>) -> Result<PathBuf> {
+    let path = match explicit {
+        Some(path) => path,
+        None => default_logs_dir()?,
+    };
+
+    fs::create_dir_all(&path)
+        .with_context(|| format!("failed to create logs directory {}", path.display()))?;
+
+    ensure_logs_dir_permissions(&path)?;
+
+    let canonical = fs::canonicalize(&path)
+        .with_context(|| format!("failed to resolve logs directory {}", path.display()))?;
+    update_latest_logs_link(&canonical)?;
+    println!("[AgentFence] Session logs: {}", canonical.display());
+
+    Ok(canonical)
+}
+
+fn update_latest_logs_link(logs_dir: &Path) -> Result<()> {
+    let Some(parent) = logs_dir.parent() else {
+        return Ok(());
+    };
+    let latest = parent.join("latest");
+    if latest.exists() {
+        let metadata = fs::symlink_metadata(&latest)
+            .with_context(|| format!("failed to stat {}", latest.display()))?;
+        if metadata.is_dir() && !metadata.file_type().is_symlink() {
+            return Ok(());
+        }
+        fs::remove_file(&latest)
+            .with_context(|| format!("failed to replace {}", latest.display()))?;
+    }
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(logs_dir, &latest)
+        .with_context(|| format!("failed to create {}", latest.display()))?;
+
+    Ok(())
+}
+
+fn prepare_session_log_files(logs_dir: &Path) -> Result<()> {
+    for file_name in [
+        "audit.jsonl",
+        "registry.json",
+        "findings.jsonl",
+        "ebpf_exec.jsonl",
+        "ebpf_exec.stderr.log",
+        "ebpf_connect.jsonl",
+        "ebpf_connect.stderr.log",
+        "ebpf_file.jsonl",
+        "ebpf_file.stderr.log",
+        "ebpf_helper.stdout.log",
+        "ebpf_helper.stderr.log",
+    ] {
+        let path = logs_dir.join(file_name);
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .with_context(|| format!("failed to create session log file {}", path.display()))?;
+    }
+
+    let registry = logs_dir.join("registry.json");
+    if registry.metadata().map(|metadata| metadata.len() == 0).unwrap_or(false) {
+        fs::write(&registry, "{\"credentials\":[]}\n")
+            .with_context(|| format!("failed to initialize {}", registry.display()))?;
+    }
+
+    Ok(())
+}
+
+fn prepare_runtime_auth_dir(logs_dir: &Path) -> Result<PathBuf> {
+    cleanup_stale_runtime_auth_dirs(Duration::from_secs(6 * 60 * 60))?;
+
+    let session_name = logs_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("session");
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before UNIX_EPOCH")?
+        .as_nanos();
+    let path = agentfence_runtime_root()?
+        .join(format!("{session_name}-{nonce}"))
+        .join("agent-auth");
+
+    if path.exists() {
+        cleanup_runtime_auth_dir(&path)
+            .with_context(|| format!("failed to clean stale runtime auth dir {}", path.display()))?;
+    }
+    fs::create_dir_all(&path)
+        .with_context(|| format!("failed to create runtime auth dir {}", path.display()))?;
+
+    #[cfg(unix)]
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+
+    Ok(path)
+}
+
+fn prepare_runtime_container_home(runtime_auth_dir: &Path) -> Result<PathBuf> {
+    let path = runtime_auth_dir.join("home");
+    fs::create_dir_all(path.join(".local").join("bin"))
+        .with_context(|| format!("failed to create runtime container home {}", path.display()))?;
+    fs::create_dir_all(path.join(".ssh"))
+        .with_context(|| format!("failed to create runtime .ssh dir {}", path.join(".ssh").display()))?;
+
+    #[cfg(unix)]
+    {
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+        fs::set_permissions(path.join(".local"), fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("failed to set permissions on {}", path.join(".local").display()))?;
+        fs::set_permissions(path.join(".local").join("bin"), fs::Permissions::from_mode(0o700))
+            .with_context(|| {
+                format!(
+                    "failed to set permissions on {}",
+                    path.join(".local").join("bin").display()
+                )
+            })?;
+    }
+
+    Ok(path)
+}
+
+fn cleanup_runtime_auth_dir(runtime_auth_dir: &Path) -> Result<()> {
+    if runtime_auth_dir.exists() {
+        if let Err(first_error) = fs::remove_dir_all(runtime_auth_dir) {
+            cleanup_runtime_auth_dir_with_docker(runtime_auth_dir).with_context(|| {
+                format!(
+                    "failed to remove runtime auth dir {} after local cleanup failed: {}",
+                    runtime_auth_dir.display(),
+                    first_error
+                )
+            })?;
+            fs::remove_dir_all(runtime_auth_dir).with_context(|| {
+                format!("failed to remove runtime auth dir {}", runtime_auth_dir.display())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_runtime_auth_dir_with_docker(runtime_auth_dir: &Path) -> Result<()> {
+    let mut mount = OsString::from("type=bind,source=");
+    mount.push(runtime_auth_dir.as_os_str());
+    mount.push(",target=/cleanup");
+
+    let status = Command::new("docker")
+        .arg("run")
+        .arg("--rm")
+        .arg("--mount")
+        .arg(mount)
+        .arg("--entrypoint")
+        .arg("/usr/bin/find")
+        .arg("agentfence:dev")
+        .arg("/cleanup")
+        .arg("-mindepth")
+        .arg("1")
+        .arg("-depth")
+        .arg("-exec")
+        .arg("rm")
+        .arg("-rf")
+        .arg("{}")
+        .arg("+")
+        .status()
+        .context("failed to execute docker cleanup for runtime auth dir")?;
+
+    if !status.success() {
+        bail!("docker cleanup for runtime auth dir exited with status {status}");
+    }
+
+    Ok(())
+}
+
+fn cleanup_stale_runtime_auth_dirs(max_age: Duration) -> Result<()> {
+    let root = agentfence_runtime_root()?;
+    if !root.is_dir() {
+        return Ok(());
+    }
+
+    let now = SystemTime::now();
+    for entry in fs::read_dir(&root)
+        .with_context(|| format!("failed to read runtime auth root {}", root.display()))?
+    {
+        let entry =
+            entry.with_context(|| format!("failed to read runtime auth entry in {}", root.display()))?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if now.duration_since(modified).is_ok_and(|age| age >= max_age) {
+            cleanup_runtime_auth_dir(&path).with_context(|| {
+                format!("failed to remove stale runtime auth dir {}", path.display())
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn agentfence_runtime_root() -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
+    let root = home.join(".agentfence").join("runtime");
+    fs::create_dir_all(&root)
+        .with_context(|| format!("failed to create runtime directory {}", root.display()))?;
+    #[cfg(unix)]
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("failed to set permissions on {}", root.display()))?;
+    Ok(root)
+}
+
+fn default_logs_dir() -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before UNIX_EPOCH")?
+        .as_secs();
+
+    Ok(home
+        .join(".agentfence")
+        .join("logs")
+        .join(format!("session-{timestamp}")))
+}
+
+#[cfg(unix)]
+fn ensure_logs_dir_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("failed to read logs directory metadata {}", path.display()))?;
+    let mut permissions = metadata.permissions();
+
+    if permissions.mode() & 0o777 != 0o700 {
+        permissions.set_mode(0o700);
+        fs::set_permissions(path, permissions).with_context(|| {
+            format!(
+                "failed to set private permissions on logs directory {}",
+                path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_logs_dir_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn current_host_user_spec() -> Option<String> {
+    // Linux: read UID/GID from /proc/self
+    if let Ok(metadata) = fs::metadata("/proc/self") {
+        use std::os::unix::fs::MetadataExt;
+        return Some(format!("{}:{}", metadata.uid(), metadata.gid()));
+    }
+    // macOS: fall back to `id` command
+    let uid = Command::new("id").arg("-u").output().ok()?;
+    let gid = Command::new("id").arg("-g").output().ok()?;
+    let uid = String::from_utf8_lossy(&uid.stdout).trim().to_string();
+    let gid = String::from_utf8_lossy(&gid.stdout).trim().to_string();
+    if uid.is_empty() || gid.is_empty() {
+        return None;
+    }
+    Some(format!("{uid}:{gid}"))
+}
+
+#[cfg(not(unix))]
+fn current_host_user_spec() -> Option<String> {
+    None
+}
+
+fn default_container_name(project_dir: &Path) -> String {
+    let project = project_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace");
+
+    format!("agentfence-{}", sanitize_name(project))
+}
+
+fn container_workspace_path(project_dir: &Path) -> String {
+    let project = project_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace");
+    let mut name = sanitize_workspace_segment(project);
+    if is_reserved_workspace_segment(&name) {
+        name.push_str("-project");
+    }
+
+    if name.is_empty() {
+        "/workspace".to_string()
+    } else {
+        format!("/{name}")
+    }
+}
+
+fn sanitize_name(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | '0'..='9' => ch,
+            'A'..='Z' => ch.to_ascii_lowercase(),
+            _ => '-',
+        })
+        .collect()
+}
+
+fn sanitize_workspace_segment(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | '0'..='9' | 'A'..='Z' => ch,
+            _ => '-',
+        })
+        .collect()
+}
+
+fn is_reserved_workspace_segment(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "agentfence" | "root" | "tmp" | "var" | "usr" | "bin" | "etc"
+    )
+}
+
+fn add_bind_mount(command: &mut Command, source: &Path, target: &str, readonly: bool) {
+    let mut spec = OsString::from("type=bind,source=");
+    spec.push(source.as_os_str());
+    spec.push(",target=");
+    spec.push(target);
+
+    if readonly {
+        spec.push(",readonly");
+    }
+
+    command.arg("--mount").arg(spec);
+}
+
+#[derive(Clone, Copy)]
+enum MountKind {
+    Ssh,
+    Cred,
+}
+
+struct MaterializedMount {
+    host_path: PathBuf,
+    container_path: String,
+    readonly: bool,
+}
+
+fn materialize_mounts(paths: &[PathBuf], kind: MountKind) -> Result<Vec<MaterializedMount>> {
+    let mut mounts = Vec::with_capacity(paths.len());
+
+    for path in paths {
+        let host_path = canonical_file(path)?;
+        let file_name = host_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("mount source must have a valid file name: {}", host_path.display()))?;
+
+        let container_path = match kind {
+            MountKind::Ssh => format!("/agentfence/ssh/{file_name}"),
+            MountKind::Cred => format!("/agentfence/creds/{file_name}"),
+        };
+
+        mounts.push(MaterializedMount {
+            host_path,
+            container_path,
+            readonly: true,
+        });
+    }
+
+    Ok(mounts)
+}
