@@ -4,7 +4,7 @@ Project instructions for any Claude session working in this repo. Read this befo
 
 ## What this is
 
-AgentFence is a Rust CLI that wraps AI coding agents (Claude Code, Codex, Cursor, Windsurf, Copilot) in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. The full spec lives in `AgentFence.md`; this file is a fast-orientation cheat sheet.
+AgentFence is a Rust CLI that wraps AI coding agents in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. **Validated end-to-end with Codex and Claude Code today.** Cursor / Windsurf / Copilot have scaffolded `Agent` enum variants and detection branches in `agent_runtime.rs` but are not exercised — the wrapped-session flow, auto-auth mounts, and session sync-back have only been tested for the two validated agents. Don't make claims about untested agents in user-facing copy. The full spec lives in `AgentFence.md`; this file is a fast-orientation cheat sheet.
 
 ## Threat model — read this first
 
@@ -32,7 +32,7 @@ AgentFence is designed to provide **visibility into opportunistic credential exf
 - `discovery.rs` — host credential scanning before launch
 - `monitor.rs` — backend selection (`ContainerLocal` / `LinuxHostEbpf` / `DockerDesktopVm`)
 - `ebpf.rs` — bpftrace exec/net/file collectors and credential-access correlation
-- `agent_runtime.rs` — Claude/Codex/Cursor/Windsurf/Copilot auto-detection
+- `agent_runtime.rs` — agent auto-detection (Codex + Claude Code validated; Cursor/Windsurf/Copilot scaffolded only)
 - `audit.rs` — `agentfence audit` report generator
 - `config.rs` — `.agentfence.toml` loader
 

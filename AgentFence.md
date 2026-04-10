@@ -2,7 +2,7 @@
 
 **A containerized credential auditing perimeter for AI coding agents.**
 
-AgentFence is an open-source security tool that protects developer credentials from misuse by AI coding agents and their dependencies. It runs your AI agent (Claude Code, Cursor, Windsurf, Copilot, etc.) inside a Docker container that acts as a controlled execution boundary, while host-side monitoring is responsible for the highest-assurance observation of what the container actually does.
+AgentFence is an open-source security tool that protects developer credentials from misuse by AI coding agents and their dependencies. It runs your AI agent (validated end-to-end with **Codex** and **Claude Code** today) inside a Docker container that acts as a controlled execution boundary, while host-side monitoring is responsible for the highest-assurance observation of what the container actually does.
 
 ---
 
@@ -55,7 +55,7 @@ In the current prototype, some telemetry still runs inside the container. That i
 │  │  AGENTFENCE CONTAINER                                    │   │
 │  │                                                          │   │
 │  │  ┌────────────────────────────────────────────────────┐  │   │
-│  │  │  AI Coding Agent (Claude Code / Cursor / etc.)     │  │   │
+│  │  │  AI Coding Agent (Codex / Claude Code)              │  │   │
 │  │  └──────────────────────┬─────────────────────────────┘  │   │
 │  │                         │                                │   │
 │  │  ┌─────────────┐  ┌────┴────────┐  ┌─────────────────┐  │   │
@@ -440,15 +440,15 @@ This scanner runs in the host's native environment (no Docker needed) and output
 
 ## Threat Coverage
 
-AgentFence defends against the following documented attack patterns:
+AgentFence is designed to defend against the following documented attack patterns. The CVEs cited below were originally reported against Cursor; they're listed because they motivate the threat model — the same attack classes apply to any AI coding agent that inherits the developer's environment. **AgentFence's defenses against these classes have been validated in the Codex and Claude Code wrapped-session flow only;** equivalent end-to-end validation against Cursor has not been performed.
 
-### CVE-2026-22708 — Environment Variable Poisoning (Cursor)
+### CVE-2026-22708 — Environment Variable Poisoning (originally reported against Cursor)
 
 **Attack:** Shell built-ins (`export`, `typeset`, `declare`) execute without user consent, poisoning variables like `PAGER`, `PYTHONWARNINGS`, `BROWSER`, `PERL5OPT` to achieve code execution when trusted commands run.
 
 **AgentFence defense:** The environment watcher detects any modification to dangerous variables immediately and generates an alert. The host's `~/.zshrc` and `~/.bashrc` are not mounted, so persistent poisoning via file write to rc files is impossible.
 
-### CVE-2025-54135 / CVE-2025-54136 — MCP Config Tampering (Cursor)
+### CVE-2025-54135 / CVE-2025-54136 — MCP Config Tampering (originally reported against Cursor)
 
 **Attack:** Malicious prompt injection causes the agent to create or modify MCP configuration files, adding attacker-controlled servers.
 
@@ -653,7 +653,7 @@ agentfence/
 ### Phase 3 — Agent Integrations
 
 - Claude Code hooks integration (bidirectional — AgentFence informs hooks, hooks inform AgentFence)
-- Cursor rules integration
+- End-to-end validation for additional agents (Cursor, Windsurf, Copilot — `Agent` enum branches exist but the wrapped-session flow has only been exercised for Codex and Claude Code)
 - MCP config monitoring
 - Pre-built container images with popular AI agents
 
