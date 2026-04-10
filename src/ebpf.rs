@@ -1263,7 +1263,7 @@ fn file_audit_record(record: &FileAccessEventRecord) -> Value {
     })
 }
 
-fn utc_now_iso() -> String {
+pub(crate) fn utc_now_iso() -> String {
     format_system_time_iso(SystemTime::now())
 }
 

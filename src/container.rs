@@ -20,7 +20,8 @@ use serde_json::{Map, Value, json};
 static CONTAINER_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/container");
 
 use crate::agent_runtime;
-use crate::discovery::scan_host_credentials;
+use crate::discovery::{HostScanReport, scan_host_credentials};
+use crate::ebpf::utc_now_iso;
 use crate::monitor::{
     MonitorMode, MonitoringRequest, monitoring_request_for_mode, run_with_monitoring,
     select_monitoring_backend,
@@ -230,6 +231,21 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         .container_name
         .unwrap_or_else(|| default_container_name(&project_dir));
     let workspace_path = container_workspace_path(&project_dir);
+
+    // Seed the runtime credential registry from the host scan findings before
+    // the bpftrace file collector starts. Without this, host_scan finds the
+    // project's .env but the registry stays empty, lookup_monitored_path in
+    // the file collector returns None for every observed openat, and zero
+    // credential-access events get recorded for files that AgentFence already
+    // knows about. Project-scan findings translate cleanly to the in-container
+    // workspace path; the file collector's workspace_paths_equivalent helper
+    // matches observations on either the auto-detected workspace path or
+    // the /workspace alias.
+    if let Err(err) =
+        seed_registry_from_host_scan(&logs_dir, &host_scan, &project_dir, &workspace_path)
+    {
+        eprintln!("[AgentFence] Failed to seed credential registry from host scan: {err:#}");
+    }
 
     let mut command = Command::new("docker");
     command.arg("run").arg("--rm");
@@ -1525,6 +1541,106 @@ fn update_latest_logs_link(logs_dir: &Path) -> Result<()> {
     #[cfg(unix)]
     std::os::unix::fs::symlink(logs_dir, &latest)
         .with_context(|| format!("failed to create {}", latest.display()))?;
+
+    Ok(())
+}
+
+/// Seeds the runtime credential registry with host scan findings that will be
+/// visible to the file collector inside the container.
+///
+/// Without this, `lookup_monitored_path` in the file collector only matches
+/// the hard-coded `/agentfence/{creds,ssh}/` prefixes plus whatever explicit
+/// `--mount` invocations have written via `registry_update.py`. Auto-discovered
+/// workspace credentials (the most common case — `.env` files in the project)
+/// land in `host_scan.json` but never reach the runtime registry, so the file
+/// collector silently misses every access.
+///
+/// This function only handles `project_scan` findings today. Mapping
+/// `host_scan` home credentials (e.g. `~/.codex/auth.json`) to their
+/// auto-mounted in-container paths requires a richer mount-mapping table that
+/// the auto-auth code doesn't currently expose; that's a separate follow-up.
+fn seed_registry_from_host_scan(
+    logs_dir: &Path,
+    host_scan: &HostScanReport,
+    project_dir: &Path,
+    workspace_path: &str,
+) -> Result<()> {
+    let registry_path = logs_dir.join("registry.json");
+    let content = fs::read_to_string(&registry_path)
+        .with_context(|| format!("failed to read {}", registry_path.display()))?;
+    let mut registry: Value = if content.trim().is_empty() {
+        json!({"credentials": []})
+    } else {
+        serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse {}", registry_path.display()))?
+    };
+
+    if registry.get("credentials").is_none() {
+        registry["credentials"] = json!([]);
+    }
+    let credentials = registry
+        .get_mut("credentials")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| anyhow!("registry.json credentials field is not an array"))?;
+
+    let now = utc_now_iso();
+    let mut added = 0usize;
+
+    for finding in &host_scan.findings {
+        // Only project_scan findings are reliably mapped to in-container paths
+        // today. host_scan findings under the user home would need to know the
+        // auto-auth mount layout (codex / claude / etc), which we don't expose
+        // here yet.
+        if finding.source != "project_scan" {
+            continue;
+        }
+
+        let host_path = Path::new(&finding.path);
+        let Ok(rel) = host_path.strip_prefix(project_dir) else {
+            continue;
+        };
+
+        let rel_str = rel.to_string_lossy();
+        if rel_str.is_empty() {
+            continue;
+        }
+        let container_path = format!("{}/{}", workspace_path.trim_end_matches('/'), rel_str);
+
+        let registry_id = format!("file::{container_path}");
+        if credentials
+            .iter()
+            .any(|entry| entry.get("id").and_then(Value::as_str) == Some(&registry_id))
+        {
+            continue;
+        }
+
+        credentials.push(json!({
+            "id": registry_id,
+            "classification": finding.classification,
+            "discovery_method": "project_scan",
+            "discovered_at": now,
+            "last_seen_at": now,
+            "source_command": Value::Null,
+            "type": "file",
+            "path": container_path,
+            "kind": "credential_file",
+            "mount_mode": "read-only",
+            "access_count": 0,
+            "last_accessed_at": Value::Null,
+            "expected_destinations": [],
+        }));
+        added += 1;
+    }
+
+    if added > 0 {
+        let serialized = serde_json::to_string_pretty(&registry)
+            .context("failed to serialize seeded registry")?;
+        fs::write(&registry_path, format!("{serialized}\n"))
+            .with_context(|| format!("failed to write {}", registry_path.display()))?;
+        println!(
+            "[AgentFence] Seeded {added} workspace credential(s) into the runtime registry from host scan."
+        );
+    }
 
     Ok(())
 }
