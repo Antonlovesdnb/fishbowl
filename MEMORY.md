@@ -16,6 +16,53 @@ Consolidated state of security, usability, and performance findings across 4 rev
 | 2 | `SECURITY_REVIEW_2.md` | N1–N5 | S2, S3, U3 (S1 partial) |
 | 3 | `SECURITY_REVIEW_3.md` | N6–N9 | S1 (full), N1, N2, N4 |
 | 4 | `SECURITY_REVIEW_4.md` | N10–N12 | N6, N7, N9 |
+| Runtime validation 2026-04-09 | (this file, `Notes from 2026-04-09 runtime validation` below) | — | macOS strong monitoring made functional end-to-end on Colima; binary distribution unblocked; collector image build path repaired |
+
+## Notes from 2026-04-09 runtime validation
+
+A runtime test pass on macOS + Colima 6.8.0-100-generic aarch64. None of these are security findings — they're functional gaps in in-progress features that surfaced when the path was actually exercised end-to-end. All shipped in v0.1.0–v0.1.4.
+
+**Binary distribution path unblocked.**
+
+- Added `.github/workflows/release.yml`: 4 native targets (macOS x86_64+arm64, Linux x86_64+arm64 musl-static), SHA256SUMS, GitHub Releases on `v*` tag push.
+- Added `install.sh`: OS/arch-detect, checksum verify, install to `/usr/local/bin` (or `~/.local/bin`).
+- `src/container.rs:manifest_dir()` was hardcoded to `env!("CARGO_MANIFEST_DIR")`, baking the build-time path into the binary and breaking every prebuilt-binary install with `container assets directory is missing at /Users/runner/work/...`. Replaced with `include_dir!()` embedding + extraction to `dirs::cache_dir()/agentfence/container/<version>/` at runtime. Source-tree installs short-circuit to the live on-disk copy so dev edits still take effect.
+- `build_image()` skips the collector image when `dev_source_root().is_none()` (prebuilt-binary case), with a clear log line. The collector image rebuilds the agentfence binary inside a Docker container and needs the full Rust source tree as build context, which prebuilt-binary installs don't have.
+- `container/Collector.Dockerfile` had two latent bugs: pinned at `rust:1.86-alpine` while `monitor.rs` uses let-chains (Rust ≥ 1.88), and didn't `COPY container ./container` so the new `include_dir!()` macro failed at compile time. Switched to `rust:alpine` + added the COPY. The fact that #1 was latent strongly suggests nobody had built the collector image since let-chains landed in `monitor.rs`.
+
+**macOS strong monitoring made functional.**
+
+Before today: empty `ebpf_*.jsonl` files on every macOS run, with errors buried in `<session>/ebpf_*.stderr.log` and a positive-sounding `Selected Docker-in-VM helper monitoring backend` startup message giving the appearance of working monitoring. Six independent issues stacked on each other, all in the helper container path:
+
+1. **No tracefs/debugfs mounts in the helper container.** Lima/Colima VM kernels DO have `CONFIG_FTRACE_SYSCALLS` and the syscall tracepoints — the helper container just had no `/sys/kernel/tracing` tree mounted, so bpftrace's `available_events` lookup failed and reported the symptom as "tracepoint not found". Fix in `monitor.rs:spawn_docker_vm_helper_container`: add `-v /sys/kernel/tracing:/sys/kernel/tracing` and `-v /sys/kernel/debug:/sys/kernel/debug`.
+2. **`tracepoint:syscalls:sys_enter_open` doesn't exist on arm64** (only `openat`/`openat2`). bpftrace fails the entire script when one probe is unattachable, taking the survivors with it. On arm64 the file collector silently captured nothing because of one stale probe. Fix in `ebpf.rs:build_file_script`: drop the bare-`open` probe entirely. `openat` covers it on every modern Linux because glibc compiles `open()` to `openat(AT_FDCWD, ...)`.
+3. **bpftrace stdout was libc-fully-buffered** (default for non-tty pipes). Sparse workloads — a couple of cats, a getent — never filled the 4-8KB buffer, and SIGKILL on shutdown preempted the exit-time flush. Fix: `bpftrace -B line` in all three `spawn_*_collector` functions.
+4. **`CollectorHandle::stop()` SIGKILLed bpftrace** before it could flush remaining events from the perf ring buffer or libc stdio. Fix in `ebpf.rs:CollectorHandle::stop`: send SIGINT via `libc::kill`, wait up to 1.5s for graceful exit, then escalate to SIGKILL. New direct dep: `libc`.
+5. **`stop_docker_vm_helper()` ran `docker rm -f`** which SIGKILLs PID 1 of the helper container — preempting the SIGINT-drain logic from #4 before it could even start. Fix in `monitor.rs`: `docker stop -t 5` instead. The helper was started with `--rm` so it self-cleans.
+6. **`ctrlc = "3.4"` without the `termination` feature only handles SIGINT, not SIGTERM.** `docker stop` sends SIGTERM, the handler in `run_privileged_helper` never fired, the main loop never saw `shutdown=true`, and SIGKILL kicked in after the 5s docker stop timeout — bypassing the entire graceful shutdown chain. Fix in `Cargo.toml`: `ctrlc = { version = "3.4", features = ["termination"] }`.
+7. **`parse_file_record` had a process-lifetime race.** It called `process_in_scope` as a userspace double-check after bpftrace's kernel-level cgroup filter. For short-lived processes like `cat` (which is exactly the pattern of a credential read), the process exits between bpftrace firing the event and the parser thread reading it — `fs::read_link("/proc/<pid>/ns/pid")` returns ENOENT, `process_in_scope` returns false, the event is dropped. Even though bpftrace correctly captured it inside the agent container's cgroup. Fix in `ebpf.rs:parse_file_record`: drop the redundant check; trust the bpftrace cgroup predicate, which is authoritative. The same race exists in `parse_exec_record` and `parse_connect_record` but is harder to hit (calling process is alive at the moment exec/connect probes fire) — left as future work.
+
+**Defense in depth: silent-failure detection.** Even with all the above fixed, the bpftrace probes could silently fail attachment on a future kernel or Docker provider. Added `monitor.rs:scan_collector_attach_failures()` that scans each `ebpf_*.stderr.log` after the helper alive check, looks for known bpftrace failure markers (`ERROR:`, `Unable to attach probe`, `Could not read symbols`, `not available for your kernel`), and routes them through `handle_helper_failure` so `--monitor strong` hard-errors with the actual probe-failure detail and `--monitor auto` downgrades cleanly with the message printed. Linux backend gets the same scan as a loud stderr warning (no fallback machinery).
+
+**End-to-end validation result on Colima:**
+
+```
+agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
+  /bin/bash -lc 'for i in 1 2 3; do cat /agentfence/creds/test-cred.txt; done'
+```
+- exec collector: 4 events captured ✓
+- connect collector: 1 event captured ✓
+- file collector: 3 events captured ✓
+- registry `access_count` for `/agentfence/creds/test-cred.txt`: **3** (matches the 3 cats)
+- All `ebpf_*.stderr.log` files empty (no probe-attach failures)
+
+**Open follow-ups from this pass (all functional/in-progress, not security findings):**
+
+- Publish `agentfence-collector` image to GHCR so prebuilt-binary installs on macOS can `docker pull` it instead of needing a source-tree install. This is the only thing keeping `--monitor strong` from working out of the box for binary installs.
+- Apply the same `process_in_scope` race fix to `parse_exec_record` and `parse_connect_record` for completeness.
+- Connect collector currently records `unresolved-fd:N` for destinations — the bpftrace script captures only `args->fd`, not the user-space sockaddr. Enhancement: read the sockaddr from `args->uservaddr` and decode IP/port in the script.
+- Colima default mounts don't include `/var/folders` (macOS native `$TMPDIR`), so any `mktemp -d` project path fails with `bind source path does not exist`. Document in README quick-start, or add a preflight check in `agentfence run`.
+- The README's "macOS host" platform-support paragraph and the in-binary `Skipping collector image build` notice should agree on the source-install requirement; both updated this pass but worth keeping in sync as the registry-publish work lands.
 
 ## Cumulative fix status (from `SECURITY_REVIEW_4.md`)
 

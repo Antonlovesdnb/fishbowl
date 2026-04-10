@@ -83,7 +83,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - **`seed_workspace_trust` auto-accepts Claude's trust dialog** (S4, still open). When working on this code, don't make it more aggressive without an opt-out.
 - **`PROMPT_COMMAND` is itself a watched dangerous var** but is also how AgentFence installs its hooks (S15). Edits must preserve the existing hook chain.
 - **Double bind-mount** of the project dir at both the computed workspace path and `/workspace` when they differ (N8/N12). Produces duplicate inotify events.
-- **macOS strong-monitoring backend is scaffolded but not implemented.** Don't ship Linux-only paths through the macOS code path.
+- **macOS strong monitoring works on source installs, not prebuilt binaries** (validated 2026-04-09 on Colima 6.8.0-100-generic aarch64). The `DockerVmHelper` backend is end-to-end functional: provider auto-detect, privileged sidecar spawn with tracefs/debugfs bind-mounts, bpftrace probe attach, exec/connect/file event capture, credential-access registry updates. But the host's `build_image()` skips the collector image when `dev_source_root()` is `None`, and the GitHub release workflow doesn't publish the collector image to a registry. So prebuilt-binary installs on macOS can't use `--monitor strong` today — they fall back to `--monitor basic`. To use strong monitoring on macOS: `cargo install --path .` + `agentfence build-image`. Long-term fix is publishing `agentfence-collector` to GHCR so prebuilt-binary installs can `docker pull` it.
 
 ## Where to look next
 
