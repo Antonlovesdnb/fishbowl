@@ -930,9 +930,16 @@ fn parse_file_record(line: &str, scope: &ScopeMetadata) -> Option<FileAccessEven
     let process_name = parts.next()?.to_string();
     let raw_path = parts.next()?.to_string();
 
-    if !process_in_scope(observed_pid, &scope.pid_namespace) {
-        return None;
-    }
+    // Don't redundantly check process_in_scope here. The bpftrace script
+    // already cgroup-filters at the kernel probe site, which is authoritative.
+    // Doing a second /proc/PID/ns/pid lookup in userspace introduces a fatal
+    // race for short-lived processes: cat /agentfence/creds/foo.txt can be
+    // gone by the time this thread reads the line, fs::read_link returns
+    // ENOENT, process_in_scope returns false, and the event is dropped — even
+    // though it was correctly captured by bpftrace inside the agent container's
+    // cgroup. The downstream /proc reads (read_ppid, read_cmdline,
+    // build_process_chain, etc) all degrade gracefully via unwrap_or_default()
+    // when the process is gone, so we still emit a useful event.
 
     let observed_ppid = read_ppid(observed_pid).unwrap_or_default();
     let observed_path = resolve_open_path(observed_pid, &raw_path).unwrap_or_else(|| raw_path.clone());
