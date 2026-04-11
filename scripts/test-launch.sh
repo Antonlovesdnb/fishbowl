@@ -21,8 +21,8 @@ cargo run -- build-image >/dev/null
 echo "[test-launch] running launcher smoke test"
 cargo run -- run \
   --project "$ROOT_DIR" \
-  --mount-cred "$TEST_CRED" \
-  --mount-env AGENTFENCE_TEST_TOKEN \
+  --mount "$TEST_CRED" \
+  --mount AGENTFENCE_TEST_TOKEN \
   --logs-dir "$TEST_LOGS" \
   --name agentfence-smoke-test \
   -- \

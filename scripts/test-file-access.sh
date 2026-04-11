@@ -19,7 +19,7 @@ cargo run -- build-image >/dev/null
 echo "[test-file-access] reading mounted credential"
 cargo run -- run \
   --project "$ROOT_DIR" \
-  --mount-cred "$SECRET_FILE" \
+  --mount "$SECRET_FILE" \
   --logs-dir "$LOG_DIR" \
   --name agentfence-file-access-test \
   -- \

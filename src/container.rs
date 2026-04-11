@@ -1605,9 +1605,12 @@ fn update_latest_logs_link(logs_dir: &Path) -> Result<()> {
 /// functions stay focused on copying files into the runtime dir.
 fn auto_auth_path_aliases(agent: Agent, home: &Path) -> Vec<(PathBuf, String)> {
     let mut aliases = Vec::new();
+    // Keep in sync with materialize_codex_auth_mounts and
+    // materialize_claude_auth_mounts — when a new file is added to either
+    // materialize function, add it here too so the registry seed picks it up.
     match agent {
         Agent::Codex => {
-            for file_name in ["auth.json", "config.toml"] {
+            for file_name in ["auth.json", "config.toml", "version.json"] {
                 aliases.push((
                     home.join(".codex").join(file_name),
                     format!("{AGENTFENCE_CONTAINER_HOME}/.codex/{file_name}"),
@@ -1615,10 +1618,12 @@ fn auto_auth_path_aliases(agent: Agent, home: &Path) -> Vec<(PathBuf, String)> {
             }
         }
         Agent::ClaudeCode => {
-            aliases.push((
-                home.join(".claude").join(".credentials.json"),
-                format!("{AGENTFENCE_CONTAINER_HOME}/.claude/.credentials.json"),
-            ));
+            for file_name in [".credentials.json", ".current-session", "history.jsonl"] {
+                aliases.push((
+                    home.join(".claude").join(file_name),
+                    format!("{AGENTFENCE_CONTAINER_HOME}/.claude/{file_name}"),
+                ));
+            }
             aliases.push((
                 home.join(".claude.json"),
                 format!("{AGENTFENCE_CONTAINER_HOME}/.claude.json"),

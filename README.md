@@ -160,7 +160,8 @@ Credential values are **never logged**. Environment variable previews are redact
 | Platform | Monitoring | Notes |
 |---|---|---|
 | **Linux** (source or binary) | Host-side eBPF via `sudo` helper | Full exec/connect/file coverage, cgroup-scoped. No collector image needed — bpftrace runs as the host binary. |
-| **macOS** (source or binary) | eBPF sidecar in Docker VM | Same coverage. The collector image is included in the release and loaded by `install.sh`. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
+| **macOS** (source install) | eBPF sidecar in Docker VM | Same coverage. `agentfence build-image` builds both the agent and collector images. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
+| **macOS** (prebuilt binary) | Container-local watchers | The collector image requires the source tree to build. `install.sh` attempts to download a pre-built collector from the release, but this requires repo access. Falls back to container-local telemetry if unavailable. |
 | **Any host, fallback** | Container-local watchers | If the eBPF path fails (no root on Linux, Docker not running, etc.), AgentFence falls back to bash env hooks, inotify file watchers, and `ss` network polling. |
 
 **Container images are platform-specific.** After cloning to a different architecture, run `agentfence build-image` before `agentfence run`.

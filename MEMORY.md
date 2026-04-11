@@ -77,7 +77,9 @@ agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
 | N6 | `/agentfence/home` 0o777 exposing auth files | FIXED (Pass 4) |
 | N7 | `--user` breaks `npm install -g` | FIXED (Pass 4, code path is dead) |
 | N9 | `registry.json` initialized as `{}` | FIXED (Pass 4) |
+| U1 | No `agentfence audit` subcommand | FIXED (implemented in `src/audit.rs`) |
 | U3 | No auto-build on first run | FIXED (Pass 3) |
+| U4 | No config file support | FIXED (`.agentfence.toml` loader in `src/config.rs`) |
 
 ## Open security findings
 
@@ -114,14 +116,10 @@ agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
 
 | ID | Summary |
 |----|---------|
-| U1 | No `agentfence audit` subcommand for reviewing sessions |
 | U2 | No real-time alerts during sessions (watcher output to `/dev/null`) |
-| U4 | No config file support |
 | U5 | Learning mode never transitions to enforcement |
 | U6 | No false-positive suppression (allowlist/ignorelist) |
 | U7 | Opaque error messages (Docker missing, image not found, etc.) |
-
-> **Note:** U1 (`agentfence audit`) and U4 (`.agentfence.toml`) appear to have been implemented in code (`src/audit.rs`, `src/config.rs`) since Pass 4 was written. A future review pass should re-evaluate their status.
 
 ## Open performance findings
 

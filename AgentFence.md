@@ -194,7 +194,7 @@ agentfence run --project ~/projects/my-app
 agentfence run --project ~/projects/my-app --agent claude-code
 
 # Launch with pre-seeded credentials from the host
-agentfence run --project ~/projects/my-app --mount-ssh ~/.ssh/lab_key --mount-env SPLUNK_HEC_TOKEN
+agentfence run ~/projects/my-app --mount ~/.ssh/lab_key --mount SPLUNK_HEC_TOKEN
 ```
 
 On launch, AgentFence:

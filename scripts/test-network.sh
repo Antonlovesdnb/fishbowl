@@ -17,7 +17,7 @@ cargo run -- build-image >/dev/null
 echo "[test-network] triggering outbound connection with credential context"
 cargo run -- run \
   --project "$ROOT_DIR" \
-  --mount-cred "$TMP_DIR/demo.key" \
+  --mount "$TMP_DIR/demo.key" \
   --logs-dir "$LOG_DIR" \
   --name agentfence-network-test \
   -- \
