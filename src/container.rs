@@ -1187,9 +1187,10 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) ->
         return Ok(());
     };
 
-    // Log what's being synced back so changes are visible in the audit trail.
-    // AgentFence is observation-only — we don't block the sync, but if a
-    // prompt injection modified mcpServers or allowedTools, the user sees it.
+    // Log additions, removals, and modifications to security-sensitive fields
+    // in both stdout AND the session audit log. AgentFence is observation-only
+    // — we sync the config back, but the changes are durably recorded.
+    let tracked_fields = ["mcpServers", "allowedTools", "enabledMcpTools", "trustedTools"];
     if let Some(obj) = session_project.as_object() {
         let host_project_key = project_dir.display().to_string();
         let host_project = host_root
@@ -1197,17 +1198,41 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) ->
             .and_then(Value::as_object)
             .and_then(|p| p.get(&host_project_key));
 
-        for key in ["mcpServers", "allowedTools"] {
+        let audit_log = dirs::home_dir()
+            .map(|h| h.join(".agentfence").join("logs").join("latest").join("audit.jsonl"));
+
+        for key in tracked_fields {
             let session_val = obj.get(key);
             let host_val = host_project.and_then(|p| p.get(key));
-            if session_val != host_val {
-                if let Some(val) = session_val {
-                    println!(
-                        "[AgentFence] Config sync-back: project {} field changed during session.",
-                        key
-                    );
-                    // Log to audit.jsonl would go here in a future enhancement
-                    let _ = val; // suppress unused warning
+            if session_val == host_val {
+                continue;
+            }
+
+            let change_type = match (host_val, session_val) {
+                (None, Some(_)) => "added",
+                (Some(_), None) => "removed",
+                (Some(_), Some(_)) => "modified",
+                (None, None) => continue,
+            };
+
+            println!(
+                "[AgentFence] Config sync-back: project {key} was {change_type} during session."
+            );
+
+            // Write a durable audit event so the change is in the session record.
+            if let Some(ref audit_path) = audit_log {
+                let event = json!({
+                    "timestamp": crate::ebpf::utc_now_iso(),
+                    "event": "config_sync_back",
+                    "severity": "medium",
+                    "field": key,
+                    "change": change_type,
+                    "session_value": session_val,
+                    "host_value": host_val,
+                    "reason": format!("project config field {key} was {change_type} inside the container and synced back to the host"),
+                });
+                if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(audit_path) {
+                    let _ = writeln!(file, "{}", serde_json::to_string(&event).unwrap_or_default());
                 }
             }
         }
