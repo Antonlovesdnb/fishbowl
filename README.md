@@ -170,9 +170,7 @@ Full credential values are **not intentionally logged**. Environment variable fi
 
 - **In-container audit log is writable by the agent.** The in-container watchers write `audit.jsonl` and `registry.json` to a writable subdirectory (`/var/log/agentfence/watcher/`) inside the container. A compromised agent could tamper with this watcher output. However, the **host-side eBPF logs (`ebpf_*.jsonl`) are protected** — the parent session logs directory is mounted read-only into the agent container, and the eBPF logs are written by the helper container via its own mount. So the high-fidelity event data (exec, connect, file access from the kernel layer) is tamper-proof; only the in-container watcher events are at risk.
 
-- **Container-local watchers have coverage gaps.** Bash env hooks don't fire for `sh`/`dash`/`python`/`node` (finding S7). The `ss` network poller runs every 50ms, so sub-50ms connections evade it (S6). UDP/DNS isn't covered by `ss` (S5). These gaps are why the host-side eBPF path exists — it covers all of them.
-
-- **Private repo collector image download.** The install script downloads the collector image from GitHub releases. For private repos this requires authentication — if the download fails, strong monitoring on macOS won't be available until you download the collector tarball manually (or install from source).
+- **Fallback monitoring has coverage gaps.** When strong monitoring (the default) is unavailable — no root on Linux, or collector image missing on macOS — AgentFence falls back to container-local watchers. These have known gaps: bash env hooks don't fire for `sh`/`python`/`node`, the `ss` network poller misses sub-50ms connections, and UDP/DNS isn't covered. Strong monitoring covers all of these via kernel-level eBPF probes.
 
 - **Tested agents.** Only Codex and Claude Code have been validated end-to-end. Cursor, Windsurf, and Copilot have scaffolded enum variants in the code but the wrapped-session flow hasn't been exercised for them.
 
