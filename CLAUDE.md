@@ -80,7 +80,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 
 ## Key conventions
 
-- **CLI surface is intentionally minimal.** Anton wants ~3 visible flags. Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. New features should auto-detect or live in `.agentfence.toml` before getting a flag.
+- **CLI surface is intentionally minimal.** Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. `.agentfence.toml` is untrusted project input — don't add new features that auto-apply from it without `--trust-config`.
 - **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Review docs are versioned (`SECURITY_REVIEW.md` → `_4.md`); new passes reference prior IDs (S1–S16, N1–N14).
 - **`auto_auth_path_aliases` duplicates file lists** from `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts`. When adding new auto-mounted files to either materialize function, also update `auto_auth_path_aliases` so the registry seed picks them up.
 - **`docs/DESIGN_SPEC.md` (formerly `AgentFence.md`) is the original design spec, not a contract.** Implementation diverges in places — check the code, not the spec.
@@ -95,9 +95,9 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - **Registry must be `{"credentials":[]}`, not `{}`.** Python handles either; Rust silently skips updates on `{}` (N9, fixed Pass 4).
 - **`seed_workspace_trust` auto-accepts Claude's trust dialog** (S4, still open). When working on this code, don't make it more aggressive without an opt-out.
 - **Project content must never control security posture.** Three rules:
-  1. Env vars found by scanning project text are printed as recommendations but NOT auto-passed (a malicious repo could mention `AWS_SECRET_ACCESS_KEY` in its README). Only `GH_TOKEN`/`GITHUB_TOKEN` (hardcoded in `SAFE_AUTO_PASS_ENV_VARS`) and agent-specific hints are auto-passed.
-  2. SSH keys are only auto-mounted from `~/.ssh/config` IdentityFile directives (user-controlled), not from project text or git remote heuristics.
-  3. `.agentfence.toml` in the project is fully untrusted. Mounts from config are printed as recommendations but NOT applied unless the user passes `--trust-config`. Network and monitor overrides are always ignored (CLI flags only). A malicious repo could request `~/.ssh/id_rsa` or `network = "host"`. Use `--no-config` to skip project config entirely.
+  1. Env vars: only `agent_auth_env_hints(agent)` are auto-passed (e.g. `OPENAI_API_KEY` for Cursor — the user chose the agent). Everything else (including `GH_TOKEN`) requires `--mount`. Project-text-discovered vars are printed as recommendations only.
+  2. SSH keys: presented as an interactive numbered list. User picks which to mount. Non-interactive mode requires `--mount ~/.ssh/<key>`. No auto-mounting.
+  3. `.agentfence.toml`: fully untrusted. Mounts require `--trust-config`. Network and monitor overrides are always ignored (CLI flags only). `--no-config` skips project config entirely.
 - **`PROMPT_COMMAND` is itself a watched dangerous var** but is also how AgentFence installs its hooks (S15). Edits must preserve the existing hook chain.
 - **Double bind-mount** of the project dir at both the computed workspace path and `/workspace` when they differ (N8/N12). Produces duplicate inotify events.
 - **macOS strong monitoring works on source installs, not prebuilt binaries** (validated 2026-04-09 on Colima 6.8.0-100-generic aarch64). The `DockerVmHelper` backend is end-to-end functional: provider auto-detect, privileged sidecar spawn with tracefs/debugfs bind-mounts, bpftrace probe attach, exec/connect/file event capture, credential-access registry updates. But the host's `build_image()` skips the collector image when `dev_source_root()` is `None`, and the GitHub release workflow doesn't publish the collector image to a registry. So prebuilt-binary installs on macOS can't use `--monitor strong` today — they fall back to `--monitor basic`. To use strong monitoring on macOS: `cargo install --path .` + `agentfence build-image`. Long-term fix is publishing `agentfence-collector` to GHCR so prebuilt-binary installs can `docker pull` it.
