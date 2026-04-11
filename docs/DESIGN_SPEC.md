@@ -1,8 +1,6 @@
-# AgentFence
+# AgentFence — Original Design Spec
 
-**A containerized credential auditing perimeter for AI coding agents.**
-
-AgentFence is an open-source security tool that protects developer credentials from misuse by AI coding agents and their dependencies. It runs your AI agent (validated end-to-end with **Codex** and **Claude Code** today) inside a Docker container that acts as a controlled execution boundary, while host-side monitoring is responsible for the highest-assurance observation of what the container actually does.
+> **Historical document.** This was the original design specification written before implementation. The actual implementation diverges significantly: blocking/enforcement was deliberately removed, the project is observation-only, Windows support was never built, and the file/directory layout doesn't match. **For current documentation, see [README.md](../README.md).** This file is preserved as a design reference for the threat model and architectural intent.
 
 ---
 

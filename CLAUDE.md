@@ -83,7 +83,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - **CLI surface is intentionally minimal.** Anton wants ~3 visible flags. Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. New features should auto-detect or live in `.agentfence.toml` before getting a flag.
 - **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Review docs are versioned (`SECURITY_REVIEW.md` → `_4.md`); new passes reference prior IDs (S1–S16, N1–N14).
 - **`auto_auth_path_aliases` duplicates file lists** from `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts`. When adding new auto-mounted files to either materialize function, also update `auto_auth_path_aliases` so the registry seed picks them up.
-- **`AgentFence.md` is intent, not a contract.** Implementation diverges in places — check the code, not the spec.
+- **`docs/DESIGN_SPEC.md` (formerly `AgentFence.md`) is the original design spec, not a contract.** Implementation diverges in places — check the code, not the spec.
 - **Dangerous-var lists are duplicated** in `container/bash_env.sh` and `src/ebpf.rs` (finding N5). Keep both in sync when editing either.
 - **Two backends, one CLI.** `monitor.rs` selects `ContainerLocal` / `LinuxHostEbpf` / `DockerDesktopVm` based on platform + `--monitor`. Don't add Linux-only logic outside `ebpf.rs`.
 - **Container runs as host UID:GID** via `--user`. The host-side runtime dir is bind-mounted over `/agentfence/home` so the non-root container user has a writable 0o700 home.
@@ -109,7 +109,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 
 ## Where to look next
 
-- `AgentFence.md` — full spec & threat model
+- `docs/DESIGN_SPEC.md` — original design spec (historical, diverges from implementation)
 - `README.md` — usage, log format, session review, known limitations
 - `MEMORY.md` — consolidated findings snapshot from review passes + 2026-04-09 runtime validation
 - `SECURITY_REVIEW.md` → `SECURITY_REVIEW_4.md` — full review history
