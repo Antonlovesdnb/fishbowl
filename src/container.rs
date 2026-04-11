@@ -654,21 +654,32 @@ fn user_ssh_config_identity_files() -> Vec<String> {
     names
 }
 
+/// Env vars that are safe to auto-pass because they're needed for core agent
+/// workflows (git operations) and are compiled into AgentFence, not derived
+/// from project text. These are auto-passed regardless of what the project
+/// text says — the trust is in the AgentFence source code.
+const SAFE_AUTO_PASS_ENV_VARS: &[&str] = &["GH_TOKEN", "GITHUB_TOKEN"];
+
 fn auto_discovered_env_vars(
     report: &crate::discovery::HostScanReport,
     agent: Agent,
 ) -> Vec<String> {
-    // Only auto-pass env vars from the hardcoded agent-specific hint list.
-    // These are compiled into AgentFence (not project-controlled) and only
-    // contain the vars the detected agent actually needs to authenticate.
+    // Auto-pass env vars from two trusted sources:
     //
-    // Previously this also included report.project_context.referenced_env_vars
-    // (env var names found in project text files), but that let a malicious
-    // repo mention AWS_SECRET_ACCESS_KEY in its README and silently import
-    // the host's actual secret into the container. Project-discovered vars
-    // are now printed as a recommendation instead of auto-passed.
+    // 1. Agent-specific hints (compiled into AgentFence, e.g. Cursor needs
+    //    OPENAI_API_KEY). The user chose the agent, so this is user-controlled.
+    //
+    // 2. Core workflow vars (GH_TOKEN, GITHUB_TOKEN) that agents commonly
+    //    need for git operations. These are hardcoded here, not derived from
+    //    project text.
+    //
+    // Everything else discovered in project text files (e.g., a README that
+    // mentions AWS_SECRET_ACCESS_KEY) is printed as a recommendation but NOT
+    // auto-passed. This prevents a malicious repo from silently importing
+    // host secrets.
     let mut names: Vec<String> = agent_auth_env_hints(agent)
         .iter()
+        .chain(SAFE_AUTO_PASS_ENV_VARS.iter())
         .map(|name| (*name).to_string())
         .filter(|name| env::var_os(name).is_some())
         .collect();
