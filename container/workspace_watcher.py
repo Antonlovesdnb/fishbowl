@@ -9,8 +9,8 @@ from pathlib import Path
 
 
 WORKSPACE = Path(os.getenv("AGENTFENCE_WORKSPACE", "/workspace"))
-REGISTRY_PATH = Path("/var/log/agentfence/registry.json")
-AUDIT_PATH = Path("/var/log/agentfence/audit.jsonl")
+REGISTRY_PATH = Path("/var/log/agentfence/watcher/registry.json")
+AUDIT_PATH = Path("/var/log/agentfence/watcher/audit.jsonl")
 AUDIT_BIN = "/usr/local/bin/agentfence-audit"
 REGISTRY_BIN = "/usr/local/bin/agentfence-registry"
 ALERT_PATH = "/proc/1/fd/2"

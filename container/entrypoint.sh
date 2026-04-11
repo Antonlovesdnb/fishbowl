@@ -5,10 +5,11 @@ export AGENTFENCE_HOME="${AGENTFENCE_HOME:-/agentfence/home}"
 export HOME="${HOME:-${AGENTFENCE_HOME}}"
 export PATH="${HOME}/.local/bin:${PATH}"
 
-mkdir -p /agentfence/ssh /agentfence/creds /var/log/agentfence
-touch /var/log/agentfence/audit.jsonl
-if [ ! -s /var/log/agentfence/registry.json ]; then
-  printf '{"credentials":[]}\n' > /var/log/agentfence/registry.json
+mkdir -p /agentfence/ssh /agentfence/creds /var/log/agentfence/watcher
+# Watchers write to the /watcher subdir (RW nested mount); the parent is RO.
+touch /var/log/agentfence/watcher/audit.jsonl
+if [ ! -s /var/log/agentfence/watcher/registry.json ]; then
+  printf '{"credentials":[]}\n' > /var/log/agentfence/watcher/registry.json
 fi
 export BASH_ENV=/agentfence/bash_env.sh
 /usr/local/bin/agentfence-file-watcher </dev/null >/dev/null 2>&1 &

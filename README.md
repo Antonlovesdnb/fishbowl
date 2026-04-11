@@ -167,7 +167,7 @@ Credential values are **never logged**. Environment variable previews are redact
 
 ## Known limitations
 
-- **Writable audit trail.** The session logs directory is bind-mounted read-write into the agent container because the in-container watchers (`file_watcher.py`, `workspace_watcher.py`, `network_watcher.py`) need write access to `audit.jsonl` and `registry.json`. A compromised agent could tamper with its own audit trail. The host-side eBPF logs (`ebpf_*.jsonl`) are written by a separate container (the helper) but share the same mount, so they're also writable by the agent. Mitigation path: split into separate mount paths (read-only host data + writable watcher output) or add hash-chain integrity to the audit log.
+- **In-container audit log is writable by the agent.** The in-container watchers write `audit.jsonl` and `registry.json` to a writable subdirectory (`/var/log/agentfence/watcher/`) inside the container. A compromised agent could tamper with this watcher output. However, the **host-side eBPF logs (`ebpf_*.jsonl`) are protected** — the parent session logs directory is mounted read-only into the agent container, and the eBPF logs are written by the helper container via its own mount. So the high-fidelity event data (exec, connect, file access from the kernel layer) is tamper-proof; only the in-container watcher events are at risk.
 
 - **Container-local watchers have coverage gaps.** Bash env hooks don't fire for `sh`/`dash`/`python`/`node` (finding S7). The `ss` network poller runs every 50ms, so sub-50ms connections evade it (S6). UDP/DNS isn't covered by `ss` (S5). These gaps are why the host-side eBPF path exists — it covers all of them.
 

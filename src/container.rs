@@ -299,7 +299,32 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     if workspace_path != "/workspace" {
         add_bind_mount(&mut command, &project_dir, "/workspace", false);
     }
-    add_bind_mount(&mut command, &logs_dir, "/var/log/agentfence", false);
+    // Mount the session logs directory READ-ONLY into the agent container.
+    // This protects the eBPF event logs (written by the helper container via
+    // its own RW mount), ebpf_scope.json, and any other host-written data from
+    // being tampered with by a compromised agent. The in-container watchers get
+    // a nested RW mount at /var/log/agentfence/watcher/ for their output files
+    // (audit.jsonl, registry.json). After the container exits, the watcher
+    // output is merged back into the session logs directory.
+    let watcher_dir = logs_dir.join("watcher");
+    fs::create_dir_all(&watcher_dir)
+        .with_context(|| format!("failed to create watcher dir {}", watcher_dir.display()))?;
+    // Copy the seeded registry into the watcher dir so watchers can update it.
+    let seeded_registry = logs_dir.join("registry.json");
+    let watcher_registry = watcher_dir.join("registry.json");
+    if seeded_registry.is_file() {
+        fs::copy(&seeded_registry, &watcher_registry)
+            .with_context(|| format!("failed to copy seeded registry to {}", watcher_registry.display()))?;
+    }
+    // Create empty audit.jsonl for watchers to append to.
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(watcher_dir.join("audit.jsonl"))
+        .context("failed to create watcher audit.jsonl")?;
+
+    add_bind_mount(&mut command, &logs_dir, "/var/log/agentfence", true);
+    add_bind_mount(&mut command, &watcher_dir, "/var/log/agentfence/watcher", false);
     add_bind_mount(
         &mut command,
         &runtime_container_home,
@@ -487,6 +512,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
             &container_name,
             &logs_dir,
         )?;
+        merge_watcher_output(&logs_dir);
         return finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status);
     }
 
@@ -498,6 +524,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         &logs_dir,
     )?;
 
+    merge_watcher_output(&logs_dir);
     finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status)
 }
 
@@ -1736,6 +1763,46 @@ fn seed_registry_from_host_scan(
 ///
 /// The host-only copy lives at `~/.agentfence/host-scans/<session-name>.json`
 /// and is preserved for manual inspection or future audit enhancements.
+/// Merges in-container watcher output from the protected watcher subdirectory
+/// back into the main session logs directory after the container exits.
+///
+/// The watcher/ subdir was the only writable mount inside the agent container.
+/// The main logs dir was read-only, protecting eBPF event logs and host-written
+/// data from tampering. After the agent exits, we merge the watcher output so
+/// `agentfence audit` and human reviewers see everything in one place.
+fn merge_watcher_output(logs_dir: &Path) {
+    let watcher_dir = logs_dir.join("watcher");
+    if !watcher_dir.is_dir() {
+        return;
+    }
+
+    // Append watcher audit events to the main audit log.
+    let watcher_audit = watcher_dir.join("audit.jsonl");
+    if watcher_audit.is_file() {
+        if let Ok(content) = fs::read_to_string(&watcher_audit) {
+            if !content.trim().is_empty() {
+                let main_audit = logs_dir.join("audit.jsonl");
+                if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&main_audit) {
+                    let _ = file.write_all(content.as_bytes());
+                    if !content.ends_with('\n') {
+                        let _ = file.write_all(b"\n");
+                    }
+                }
+            }
+        }
+    }
+
+    // The watcher registry may have access_count updates and new credential
+    // discoveries from the in-container watchers. Overwrite the main registry
+    // with the watcher's version since it's a superset (seeded from the host
+    // copy at container start, then updated by watchers during the session).
+    let watcher_registry = watcher_dir.join("registry.json");
+    if watcher_registry.is_file() {
+        let main_registry = logs_dir.join("registry.json");
+        let _ = fs::copy(&watcher_registry, &main_registry);
+    }
+}
+
 fn relocate_host_scan_report(logs_dir: &Path) {
     let src = logs_dir.join("host_scan.json");
     if !src.exists() {

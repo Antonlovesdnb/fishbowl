@@ -70,7 +70,7 @@ def main() -> int:
         "reason": args.reason,
     }
 
-    audit_log = Path("/var/log/agentfence/audit.jsonl")
+    audit_log = Path("/var/log/agentfence/watcher/audit.jsonl")
     audit_log.parent.mkdir(parents=True, exist_ok=True)
     with audit_log.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, separators=(",", ":")) + "\n")

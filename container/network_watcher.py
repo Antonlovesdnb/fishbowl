@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-AUDIT_PATH = Path("/var/log/agentfence/audit.jsonl")
-REGISTRY_PATH = Path("/var/log/agentfence/registry.json")
+AUDIT_PATH = Path("/var/log/agentfence/watcher/audit.jsonl")
+REGISTRY_PATH = Path("/var/log/agentfence/watcher/registry.json")
 POLL_INTERVAL = 0.05  # 50ms
 SEEN_MAX_AGE = 60  # prune entries older than 60s
 ALERT_PATH = "/proc/1/fd/2"

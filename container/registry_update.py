@@ -37,7 +37,7 @@ def main() -> int:
     if not args.env_var and not args.path:
         raise SystemExit("either --env-var or --path is required")
 
-    registry_path = Path("/var/log/agentfence/registry.json")
+    registry_path = Path("/var/log/agentfence/watcher/registry.json")
     registry_path.parent.mkdir(parents=True, exist_ok=True)
 
     registry = load_registry(registry_path)
