@@ -44,12 +44,24 @@ AgentFence is designed to provide **visibility into opportunistic credential exf
 - `network_watcher.py` — `ss -tupnH` polling every 50ms with credential correlation
 - `audit_log.py`, `registry_update.py` — legacy CLI audit writers; watchers now write inline
 
-**3. Optional host eBPF** — bpftrace scripts via `sudo` helper, cgroupid-scoped, Linux + root + `--monitor strong` only
+**3. Host eBPF collectors** — bpftrace scripts, cgroupid-scoped
+- **Linux:** via `sudo` helper running on the host kernel directly
+- **macOS:** via privileged sidecar container inside the Docker VM (Colima/Docker Desktop/OrbStack/Rancher). Requires tracefs + debugfs bind-mounts (added 2026-04-09). Validated end-to-end on Colima 6.8.0-100-generic aarch64.
+- Both paths require the collector image (`agentfence-collector:dev`), which is built from `Collector.Dockerfile`. Source installs build it via `agentfence build-image`; prebuilt-binary installs skip it (no source tree) and fall back to container-local telemetry.
 
 Key paths:
-- Logs: `~/.agentfence/logs/session-{timestamp}/{audit,registry,findings}.jsonl`
-- Runtime auth dirs: `~/.agentfence/runtime/{session-nonce}/` (0o700)
+- Session logs: `~/.agentfence/logs/session-{timestamp}/`
+  - `audit.jsonl` — all events (JSONL, one object per line)
+  - `registry.json` — live credential registry (seeded from host scan + updated at runtime)
+  - `findings.jsonl` — credential-egress correlation findings
+  - `ebpf_{exec,connect,file}.jsonl` — host eBPF collector events
+  - `ebpf_*.stderr.log` — bpftrace stderr (empty = probes attached OK)
+  - `ebpf_scope.json` — container scope metadata (cgroup, PID namespace, etc.)
+- Host scan reports: `~/.agentfence/host-scans/session-{timestamp}.json` — credential path enumeration, host-only (NOT mounted into the container as of v0.1.8)
+- Runtime auth dirs: `~/.agentfence/runtime/{session-nonce}/` (0o700, cleaned up after 6h)
 - Container HOME: `/agentfence/home` (bind-mounted from host runtime dir, 0o700)
+
+**Credential values are never logged.** Env var previews are redacted to 4 chars + length in `redact_env_value()` (`ebpf.rs`). The `host_scan.json` file lists credential PATHS only (no contents) and is relocated out of the container-visible mount before the agent starts.
 
 ## Build / run / test
 
@@ -69,7 +81,8 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 ## Key conventions
 
 - **CLI surface is intentionally minimal.** Anton wants ~3 visible flags. Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. New features should auto-detect or live in `.agentfence.toml` before getting a flag.
-- **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Review docs are versioned (`SECURITY_REVIEW.md` → `_4.md`); new passes reference prior IDs (S1–S15, N1–N12).
+- **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Review docs are versioned (`SECURITY_REVIEW.md` → `_4.md`); new passes reference prior IDs (S1–S16, N1–N14).
+- **`auto_auth_path_aliases` duplicates file lists** from `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts`. When adding new auto-mounted files to either materialize function, also update `auto_auth_path_aliases` so the registry seed picks them up.
 - **`AgentFence.md` is intent, not a contract.** Implementation diverges in places — check the code, not the spec.
 - **Dangerous-var lists are duplicated** in `container/bash_env.sh` and `src/ebpf.rs` (finding N5). Keep both in sync when editing either.
 - **Two backends, one CLI.** `monitor.rs` selects `ContainerLocal` / `LinuxHostEbpf` / `DockerDesktopVm` based on platform + `--monitor`. Don't add Linux-only logic outside `ebpf.rs`.
@@ -85,10 +98,15 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - **Double bind-mount** of the project dir at both the computed workspace path and `/workspace` when they differ (N8/N12). Produces duplicate inotify events.
 - **macOS strong monitoring works on source installs, not prebuilt binaries** (validated 2026-04-09 on Colima 6.8.0-100-generic aarch64). The `DockerVmHelper` backend is end-to-end functional: provider auto-detect, privileged sidecar spawn with tracefs/debugfs bind-mounts, bpftrace probe attach, exec/connect/file event capture, credential-access registry updates. But the host's `build_image()` skips the collector image when `dev_source_root()` is `None`, and the GitHub release workflow doesn't publish the collector image to a registry. So prebuilt-binary installs on macOS can't use `--monitor strong` today — they fall back to `--monitor basic`. To use strong monitoring on macOS: `cargo install --path .` + `agentfence build-image`. Long-term fix is publishing `agentfence-collector` to GHCR so prebuilt-binary installs can `docker pull` it.
 
+## Known security trade-offs
+
+- **Writable audit trail.** The session logs dir is bind-mounted RW into the agent container because the Python watchers need write access to `audit.jsonl` and `registry.json`. A compromised agent could tamper with its own audit trail. The eBPF logs (`ebpf_*.jsonl`) are written by the helper container but share the same mount. Mitigation path: split into separate RO/RW mount paths, or add hash-chain integrity to the audit log.
+- **host_scan.json is relocated out of the container mount** (v0.1.8+). Before v0.1.8 it was readable inside the container, which leaked the host's credential path enumeration to the agent.
+
 ## Where to look next
 
 - `AgentFence.md` — full spec & threat model
-- `README.md` — quick-start
-- `MEMORY.md` — consolidated findings snapshot from 4 review passes
+- `README.md` — usage, log format, session review, known limitations
+- `MEMORY.md` — consolidated findings snapshot from review passes + 2026-04-09 runtime validation
 - `SECURITY_REVIEW.md` → `SECURITY_REVIEW_4.md` — full review history
 - `.agentfence.toml` — project-level config; loader at `src/config.rs`

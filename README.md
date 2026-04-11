@@ -1,237 +1,195 @@
 # AgentFence
 
-Minimal implementation of the AgentFence container launcher described in `AgentFence.md`.
+A containerized credential auditing perimeter for AI coding agents. Validated end-to-end with **Codex** and **Claude Code** on both macOS and Linux.
 
-Linux is the primary supported host platform today. macOS can use the container wrapping flow, but the host-side eBPF collectors in this repo are Linux-only.
+AgentFence wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only at runtime — no blocking, no process kills. The only "enforcement" is the static container boundary itself (`--cap-drop ALL`, namespaces, `--security-opt no-new-privileges`).
 
-## Current scope
+## How it works
 
-- Rust CLI to build and run the AgentFence container
-- Containerized execution boundary for the agent workload
-- Controlled project, credential, and audit-log mounts
-- Explicit host environment variable passthrough
-- Minimal container image with a development shell entrypoint
-- Bash-based audit logging for dangerous environment variable mutations
-- Automatic discovery of credential-like environment variables
-- JSONL audit log at `/var/log/agentfence/audit.jsonl`
-- Live registry at `/var/log/agentfence/registry.json`
-- File access auditing for mounted credentials under `/agentfence/creds` and `/agentfence/ssh`
-- Workspace credential discovery and auditing under the mounted project path
-- Outbound TCP connection logging
-- Experimental host-side eBPF collectors for stronger exec, network, and file-access visibility
+When you run `agentfence run ~/my-project`, this is what happens:
 
-## Security Model
+1. **Host credential scan.** AgentFence walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.agentfence/host-scans/`) — it is NOT visible inside the container.
 
-AgentFence has two separate roles:
+2. **Agent auto-detection.** Based on which auth artifacts exist on the host (e.g. `~/.codex/` or `~/.claude/`), AgentFence picks the agent type and auto-mounts the relevant auth files into `/agentfence/home/` inside the container. You can override with `--agent codex` or `--agent claude-code` (hidden flag).
 
-- The container is the isolation boundary. It limits what the agent can see and use to the mounted workspace, selected credentials, and session logs.
-- The host is where stronger observation belongs. The optional eBPF collectors watch the container from outside the container boundary.
+3. **Registry seeding.** Credential paths from the host scan are translated to their in-container equivalents and written to the runtime credential registry (`registry.json`). This is how the file collector knows which `openat()` events are interesting.
 
-The current in-container watchers are useful session telemetry, but they are not the long-term source of truth for comprehensive credential coverage. `agentfence run` now chooses monitoring automatically by default and clearly reports when strong host monitoring is unavailable.
+4. **Container launch.** Docker runs the agent inside a hardened container:
+   - `--cap-drop ALL --security-opt no-new-privileges`
+   - Project bind-mounted at `/<project-name>` and `/workspace`
+   - Selected credentials at `/agentfence/creds/` and `/agentfence/ssh/` (read-only)
+   - Agent auth at `/agentfence/home/` (the container's `$HOME`)
+   - Session logs at `/var/log/agentfence/`
 
-## Platform Support & Monitoring
+5. **Monitoring starts.** AgentFence picks the strongest monitoring available:
+   - **Linux:** host-side bpftrace via a `sudo` helper, scoped to the container's cgroup
+   - **macOS (source install):** bpftrace in a privileged sidecar container inside the Docker VM (auto-detects Docker Desktop, Colima, OrbStack, Rancher Desktop)
+   - **macOS (prebuilt binary):** container-local watchers only (the collector image can't be built without the source tree)
+   - **Fallback:** if the strong path fails, prints the reason and continues with container-local telemetry (bash env hooks, inotify file watchers, `ss` network polling)
 
-AgentFence automatically picks the strongest monitoring available for your OS — no flag needed.
+6. **Agent runs.** Your agent does its work inside the container. Every `execve()`, `connect()`, and `openat()` on a monitored credential is captured.
 
-| Platform | What happens | Requires |
-|---|---|---|
-| **Linux host** | Host-side eBPF exec, network, and file collectors via a privileged `sudo` helper. Scoped to the container's cgroup. | Root access for `bpftrace` |
-| **macOS host** (source install) | eBPF collectors run as a privileged sidecar container inside the Docker VM. Auto-detects Docker Desktop, Colima, OrbStack, and Rancher Desktop. | `agentfence build-image` (builds both the agent and collector images) |
-| **macOS host** (prebuilt binary) | Container-local telemetry only. The collector image can't be built without the source tree; a `Skipping collector image build` notice is printed. | Docker runtime only |
-| **Any host, fallback** | If the host eBPF helper or Docker VM sidecar fails to start, AgentFence prints the reason and continues with container-local telemetry (bash env hooks, inotify file watchers, `ss` network polling). | Docker runtime only |
-
-**Container images are platform-specific.** When cloning the repo to a host with a different CPU architecture (e.g. Linux x86_64 → macOS aarch64), run `agentfence build-image` again on the new host before `agentfence run`.
+7. **Shutdown.** When the agent exits, AgentFence gracefully drains the bpftrace collectors (SIGINT + 1.5s grace period) and tears down the helper container. Session state is synced back to the host for Codex/Claude.
 
 ## Install
 
-### Quick install (prebuilt binary)
+### Prebuilt binary
 
-macOS (Intel + Apple Silicon) and Linux (x86_64 + arm64) binaries are published with each tagged release:
+macOS and Linux binaries are published with each [tagged release](https://github.com/Antonlovesdnb/AgentFence/releases). The release includes four targets:
+
+| Binary | Platform | Notes |
+|---|---|---|
+| `agentfence-vX.Y.Z-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon | Native arm64 |
+| `agentfence-vX.Y.Z-x86_64-apple-darwin.tar.gz` | macOS Intel | Cross-compiled from arm64 |
+| `agentfence-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz` | Linux x86_64 | Fully static (musl libc), runs on any distro including Alpine |
+| `agentfence-vX.Y.Z-aarch64-unknown-linux-musl.tar.gz` | Linux arm64 | Fully static (musl libc) |
+
+The `unknown` in the Linux target names is Rust's standard [target triple](https://doc.rust-lang.org/rustc/platform-support.html) format: `<arch>-<vendor>-<os>-<libc>`. "unknown" means "no specific vendor" — it's not a bug. The `musl` suffix means the binary is statically linked against musl libc instead of glibc, so it runs on any Linux distribution without shared library dependencies.
+
+**Quick install** (auto-detects OS/arch, verifies SHA256):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh
 ```
 
-The installer auto-detects your OS/arch, verifies the SHA256, and installs to `/usr/local/bin` (falling back to `~/.local/bin`). Pin a version with `AGENTFENCE_VERSION=v0.1.0` or override the install dir with `AGENTFENCE_BIN_DIR=...`.
+Pin a version: `AGENTFENCE_VERSION=v0.1.8`. Override install dir: `AGENTFENCE_BIN_DIR=~/.local/bin`.
 
-You still need a container runtime — Docker Desktop, Colima, OrbStack, or Rancher Desktop — running before `agentfence run`.
+You still need a container runtime (Docker Desktop, Colima, OrbStack, or Rancher Desktop) running.
 
 ### From source
 
 ```bash
 cargo install --path .
-```
-
-Requires Rust ≥ 1.85 (edition 2024).
-
-## Usage
-
-Build the images from source:
-
-```bash
 agentfence build-image
 ```
 
-Run a project in the container:
+Requires Rust >= 1.85 (edition 2024). Source installs get both the agent image and the collector image, which enables strong monitoring on macOS.
+
+## Usage
 
 ```bash
-agentfence run ~/projects/my-app
-```
-
-Run the current directory with the default wrapped-session flow:
-
-```bash
+# Run the current directory
 agentfence run
+
+# Run a specific project
+agentfence run ~/projects/my-app
+
+# Mount a credential (auto-detects type: env var, SSH key, or credential file)
+agentfence run --mount GH_TOKEN --mount ~/.ssh/id_ed25519 --mount ~/secrets/service.json
+
+# Use host networking (for VPN/lab routes)
+agentfence run --network host
 ```
 
-Run a Claude or Codex-style wrapped session with automatic host env passthrough inference:
+Mounted credentials appear inside the container at `/agentfence/creds/<filename>` (credential files) and `/agentfence/ssh/<filename>` (SSH keys). Environment variables are passed through directly.
+
+## Reviewing sessions
+
+After a run, review what happened:
 
 ```bash
-agentfence run ~/projects/my-app --agent claude-code
+agentfence audit              # most recent session
+agentfence audit <SESSION>    # specific session directory
 ```
 
-```bash
-agentfence run ~/projects/my-app --agent codex
+The audit report shows:
+- **Credentials** — each discovered credential, its classification, access count, and expected destinations
+- **Alerts** — medium/high/critical severity events (env mutations, credential access by suspicious processes)
+- **Network** — outbound destinations with connection counts and alert flags
+
+### Session log location
+
+All session data lives under `~/.agentfence/logs/`:
+
+```
+~/.agentfence/
+  logs/
+    latest -> session-1775780487       # symlink to most recent
+    session-1775780487/                # one directory per run
+      audit.jsonl                      # all audit events (JSONL)
+      registry.json                    # credential registry (live state)
+      findings.jsonl                   # credential-egress correlation findings
+      ebpf_exec.jsonl                  # host eBPF: process exec events
+      ebpf_connect.jsonl               # host eBPF: network connect events
+      ebpf_file.jsonl                  # host eBPF: credential file access events
+      ebpf_scope.json                  # eBPF container scope metadata
+      ebpf_*.stderr.log                # bpftrace stderr (empty = probes attached OK)
+  host-scans/
+    session-1775780487.json            # host credential path enumeration (host-only)
+  runtime/
+    session-1775780487-<nonce>/        # runtime auth copies (cleaned up after 6h)
 ```
 
-When `--mount-env` is omitted, AgentFence now auto-passes through matching host credential env vars based on the selected agent and credential env names referenced by the project.
+### Log formats
 
-For Claude-style local auth, AgentFence also auto-mounts host auth files from `~/.claude` when `--agent claude-code` is selected. That means a project can use Claude inside the container without requiring `ANTHROPIC_API_KEY` in the host environment if Claude is already authenticated locally via `~/.claude/.credentials.json`.
+**audit.jsonl** — one JSON object per line, every event from both in-container watchers and host eBPF collectors:
 
-Mount specific credentials:
-
-```bash
-agentfence run \
-  ~/projects/my-app \
-  --mount-ssh ~/.ssh/lab_key \
-  --mount-cred ~/secrets/service-account.json \
-  --mount-env GH_TOKEN
+```json
+{
+  "timestamp": "2026-04-10T00:21:29+00:00",
+  "event": "process_exec",
+  "severity": "info",
+  "agent": "host-ebpf",
+  "command": "/bin/cat",
+  "path": "/usr/bin/cat",
+  "process_name": "cat",
+  "observed_pid": "40643",
+  "process_chain": "cat(pid=40643) <- bash(pid=40626) <- tini <- containerd-shim <- systemd",
+  "env_findings": [{"variable": "BASH_ENV", "value_preview": "/age...(redacted,len=23)"}],
+  "discovery_method": "host_ebpf_exec",
+  "verdict": "observed"
+}
 ```
 
-Mounted credential files are exposed inside the container under `/agentfence/ssh` and `/agentfence/creds`. The project itself is mounted at a path derived from the project folder name, such as `/my-app` for `~/projects/my-app`; `/workspace` remains as a compatibility bind-mount alias.
+Event types: `process_exec`, `env_mutation`, `env_enumeration`, `credential_discovery`, `credential_access`, `network_egress`, `workspace_credential_access`.
 
-Use host networking when the wrapped agent must reach the same host-only lab, VPN, or local service routes that the host can reach:
+Credential values are **never logged**. Environment variable previews are redacted to the first 4 characters + length.
 
-```bash
-agentfence run ~/projects/my-app --network host
+**registry.json** — live credential registry, updated as credentials are discovered and accessed:
+
+```json
+{
+  "credentials": [
+    {
+      "id": "file::/agentfence-smoke/.env",
+      "classification": "Project .env Credential File",
+      "discovery_method": "project_scan",
+      "path": "/agentfence-smoke/.env",
+      "access_count": 3,
+      "last_accessed_at": "2026-04-10T00:21:29+00:00"
+    }
+  ]
+}
 ```
 
-`--network bridge` is the default and keeps Docker's normal network isolation. `--network host` gives the container the host network namespace, which improves parity with the host but weakens network isolation.
+**ebpf_exec.jsonl / ebpf_connect.jsonl / ebpf_file.jsonl** — host-side eBPF collector events, one JSON object per line. These are higher-fidelity than the in-container watchers because they run outside the agent's process tree at the kernel probe site.
 
-Control monitoring behavior explicitly when needed:
+**findings.jsonl** — credential-access-then-network-connect correlation findings (e.g., "process read ~/.codex/auth.json then connected to 185.x.x.x:443").
 
-```bash
-agentfence run ~/projects/my-app --monitor auto
-```
+## Platform support
 
-```bash
-agentfence run ~/projects/my-app --monitor basic
-```
+| Platform | Monitoring | Notes |
+|---|---|---|
+| **Linux** (source or binary) | Host-side eBPF via `sudo` helper | Full exec/connect/file coverage, cgroup-scoped |
+| **macOS** (source install) | eBPF sidecar in Docker VM | Same coverage; auto-detects Docker Desktop/Colima/OrbStack/Rancher |
+| **macOS** (prebuilt binary) | Container-local watchers only | Bash env hooks, inotify, `ss` polling. Collector image needs source tree to build. |
 
-```bash
-agentfence run ~/projects/my-app --monitor strong
-```
+**Container images are platform-specific.** After cloning to a different architecture, run `agentfence build-image` before `agentfence run`.
 
-`auto` is the default. When strong monitoring is not available on the current host, AgentFence will say so clearly in the console and continue with container-local telemetry when appropriate.
+## Known limitations
 
-## Smoke test
+- **Writable audit trail.** The session logs directory is bind-mounted read-write into the agent container because the in-container watchers (`file_watcher.py`, `workspace_watcher.py`, `network_watcher.py`) need write access to `audit.jsonl` and `registry.json`. A compromised agent could tamper with its own audit trail. The host-side eBPF logs (`ebpf_*.jsonl`) are written by a separate container (the helper) but share the same mount, so they're also writable by the agent. Mitigation path: split into separate mount paths (read-only host data + writable watcher output) or add hash-chain integrity to the audit log.
 
-Run the end-to-end launcher smoke test:
+- **Container-local watchers have coverage gaps.** Bash env hooks don't fire for `sh`/`dash`/`python`/`node` (finding S7). The `ss` network poller runs every 50ms, so sub-50ms connections evade it (S6). UDP/DNS isn't covered by `ss` (S5). These gaps are why the host-side eBPF path exists — it covers all of them.
 
-```bash
-make test-launch
-```
+- **Prebuilt binaries can't build the collector image.** On macOS, this means prebuilt installs only get container-local telemetry. Publishing the collector image to a container registry (so prebuilt installs can `docker pull` it) is a planned improvement.
 
-This builds the image, launches the container with a temporary credential file and env var, verifies the expected mount points from inside the container, and confirms audit-log volume writes reach the host.
+- **Tested agents.** Only Codex and Claude Code have been validated end-to-end. Cursor, Windsurf, and Copilot have scaffolded enum variants in the code but the wrapped-session flow hasn't been exercised for them.
 
-Run the minimal audit test:
+## Security model
 
-```bash
-make test-audit
-```
+AgentFence provides **visibility into opportunistic credential exfiltration** — malicious npm/pip postinstall scripts, env-var poisoning (CVE-2026-22708), MCP config tampering via prompt injection (CVE-2025-54135/54136), and prompt injection that runs `curl`/`wget` to exfiltrate credentials.
 
-This launches a shell inside the container, mutates `PAGER`, runs `printenv`, and prints the resulting `audit.jsonl` entries.
+**Out of scope:** determined adversaries who specifically target the monitoring stack, the agent encoding credentials into its own API channel (e.g. to `api.anthropic.com`), and sophisticated multi-step exfil chains.
 
-Run the env credential discovery test:
-
-```bash
-make test-discovery
-```
-
-This exports `OPENAI_API_KEY` and `GH_TOKEN` inside the container, then prints both the live registry and the audit events created by discovery.
-
-Run the mounted credential access test:
-
-```bash
-make test-file-access
-```
-
-This mounts a temporary credential file, reads it inside the container, and verifies that both the registry and `audit.jsonl` record the access.
-
-Run the workspace discovery and access test:
-
-```bash
-make test-workspace
-```
-
-Run the outbound network watcher test:
-
-```bash
-make test-network
-```
-
-Linux-only low-level collector flags still exist for debugging, but normal usage should prefer `--monitor auto|basic|strong`:
-
-```bash
-agentfence run . --ebpf-exec --ebpf-net --ebpf-file
-```
-
-These flags currently use a small privileged helper launched via `sudo` because they rely on `bpftrace` from the host to observe the container. The main launcher remains unprivileged. When `--ebpf-file` is enabled, the in-container file access audit emitters stay available for discovery and registry updates, but file-access events themselves are emitted by the host eBPF collector to avoid duplicate audit records.
-
-You can manually test env credential discovery with:
-
-```bash
-agentfence run .
-```
-
-Then inside the container:
-
-```bash
-export OPENAI_API_KEY=demo-key
-export GH_TOKEN=demo-token
-cat /var/log/agentfence/registry.json
-cat /var/log/agentfence/audit.jsonl
-```
-
-## Minimal audit behavior
-
-Interactive shells inside the container now log:
-
-- dangerous environment variable mutations such as `PAGER`, `LD_PRELOAD`, `GIT_ASKPASS`, `PROMPT_COMMAND`
-- environment enumeration commands such as `env`, `printenv`, and `set`
-- credential discovery events for variable names like `OPENAI_API_KEY`, `GH_TOKEN`, `*_TOKEN`, `*_SECRET`, and `*_PASSWORD`
-- access events for mounted credential files under `/agentfence/creds` and `/agentfence/ssh`
-- discovery and access events for credential-bearing files inside the mounted project path
-- outbound TCP connection events with destination and process context
-
-The events are written to:
-
-```bash
-/var/log/agentfence/audit.jsonl
-```
-
-Discovered env credentials are persisted to:
-
-```bash
-/var/log/agentfence/registry.json
-```
-
-## Correlation
-
-AgentFence correlates credential-access events with subsequent network connects from the same process and writes high-severity findings to:
-
-```bash
-/var/log/agentfence/findings.jsonl
-```
-
-These findings are audit signals. AgentFence no longer attempts to terminate or block the process automatically.
+AgentFence is **observation-only at runtime.** It does not block, terminate, or interfere with the agent. For kernel-level prevention with enforcement, see [owLSM](https://github.com/Cybereason-Public/owLSM), [Falco](https://falco.org/), or [Tetragon](https://tetragon.io/) — AgentFence is complementary to these tools, not a replacement for them.
