@@ -28,6 +28,20 @@ use crate::monitor::{
 };
 
 const AGENTFENCE_CONTAINER_HOME: &str = "/agentfence/home";
+
+/// Drop guard that deletes the temporary env-file containing credential values.
+/// Ensures cleanup on any exit path — normal return, error propagation, or panic.
+struct EnvFileGuard {
+    path: Option<PathBuf>,
+}
+
+impl Drop for EnvFileGuard {
+    fn drop(&mut self) {
+        if let Some(ref path) = self.path {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum Agent {
     Shell,
@@ -428,7 +442,10 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     // process table (ps aux, /proc/PID/cmdline). The env-file is written to
     // a host-only path (NOT inside logs_dir, which is bind-mounted into the
     // container and would make the secrets readable by the agent).
-    let env_file = if !env_vars.is_empty() {
+    //
+    // Wrapped in a Drop guard so the file is cleaned up on ANY exit path —
+    // including errors from fallible code between here and run_with_monitoring.
+    let env_file_guard = if !env_vars.is_empty() {
         let env_file_dir = agentfence_data_root()?.join("tmp");
         fs::create_dir_all(&env_file_dir)
             .with_context(|| format!("failed to create {}", env_file_dir.display()))?;
@@ -456,9 +473,9 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         #[cfg(unix)]
         fs::set_permissions(&env_file_path, fs::Permissions::from_mode(0o600))?;
         command.arg("--env-file").arg(&env_file_path);
-        Some(env_file_path)
+        EnvFileGuard { path: Some(env_file_path) }
     } else {
-        None
+        EnvFileGuard { path: None }
     };
 
     // Non-secret env vars are fine as CLI args (no credential values).
@@ -538,34 +555,27 @@ pub fn run_container(options: RunOptions) -> Result<()> {
                 logs_dir.join("ebpf_file.jsonl").display()
             );
         }
-        let result = run_with_monitoring(
+        // env_file_guard auto-cleans via Drop on any exit path.
+        let status = run_with_monitoring(
             monitoring_plan,
             command,
             &options.image,
             &container_name,
             &logs_dir,
-        );
-        // Clean up env-file before propagating errors — secrets must not linger.
-        if let Some(ref path) = env_file {
-            let _ = fs::remove_file(path);
-        }
-        let status = result?;
+        )?;
+        drop(env_file_guard);
         merge_watcher_output(&logs_dir);
         return finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status);
     }
 
-    let result = run_with_monitoring(
+    let status = run_with_monitoring(
         monitoring_plan,
         command,
         &options.image,
         &container_name,
         &logs_dir,
-    );
-    // Clean up env-file before propagating errors — secrets must not linger.
-    if let Some(ref path) = env_file {
-        let _ = fs::remove_file(path);
-    }
-    let status = result?;
+    )?;
+    drop(env_file_guard);
     merge_watcher_output(&logs_dir);
     finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status)
 }
