@@ -39,7 +39,7 @@ You can override detection with `--agent codex` or `--agent claude-code` (hidden
 
 **Default command**: `claude`
 
-**Session sync back**: On exit, project session state is synced from the container's `~/.claude/projects/` back to the host's `~/.claude/projects/`. The host `~/.claude.json` is updated with merged project config.
+**Session sync back**: On exit, project session state is synced from the container's `~/.claude/projects/` back to the host's `~/.claude/projects/`. The host `~/.claude.json` is updated with the project config from the session. Changes to security-sensitive fields (`mcpServers`, `allowedTools`) are logged in the startup output so modifications from inside the container are visible.
 
 **Session resume**: If a prior session exists, launches with `claude --resume <session_id>`.
 

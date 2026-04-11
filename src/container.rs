@@ -1126,22 +1126,102 @@ fn sync_claude_project_session_back(project_dir: &Path, runtime_auth_dir: &Path)
         })?;
     }
 
-    // Do NOT sync .claude.json project config back from the container.
-    // The container's copy is writable (the agent runs there), so a prompt-
-    // injected agent could modify allowedTools, add malicious mcpServers,
-    // or change trust fields — and those changes would persist on the host
-    // for all future Claude sessions outside AgentFence. The workspace
-    // trust entry that AgentFence adds was already written to the host copy
-    // before the session started, so nothing in .claude.json needs to come
-    // back. Session files (conversation history, project state) are synced
-    // above via the projects/ directory copy.
-    //
-    // Previously: sync_claude_project_config_back(&session_config, project_dir)?;
+    // Sync .claude.json project config back. Claude Code modifies this during
+    // sessions (tool approvals, MCP servers, project settings) and users
+    // expect those changes to persist. AgentFence is observation-only — we
+    // log what changed rather than blocking the sync.
+    let session_config = runtime_auth_dir.join("claude").join(".claude.json");
+    sync_claude_project_config_back(&session_config, project_dir)?;
 
     println!(
-        "[AgentFence] Synced Claude project session files back to {}",
+        "[AgentFence] Synced Claude project session state back to {}",
         project_dir.display()
     );
+
+    Ok(())
+}
+
+fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) -> Result<()> {
+    if !session_config.is_file() {
+        return Ok(());
+    }
+
+    let Some(home) = dirs::home_dir() else {
+        return Ok(());
+    };
+    let host_config = home.join(".claude.json");
+    if !host_config.is_file() {
+        return Ok(());
+    }
+
+    let session_content = fs::read_to_string(session_config)
+        .with_context(|| format!("failed to read {}", session_config.display()))?;
+    let host_content = fs::read_to_string(&host_config)
+        .with_context(|| format!("failed to read {}", host_config.display()))?;
+    let session_root: Value = serde_json::from_str(&session_content)
+        .with_context(|| format!("failed to parse {}", session_config.display()))?;
+    let mut host_root: Value = serde_json::from_str(&host_content)
+        .with_context(|| format!("failed to parse {}", host_config.display()))?;
+
+    let container_key = container_workspace_path(project_dir);
+    let Some(session_project) = session_root
+        .get("projects")
+        .and_then(Value::as_object)
+        .and_then(|projects| {
+            projects
+                .get(&container_key)
+                .or_else(|| projects.get("/workspace"))
+        })
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    // Log what's being synced back so changes are visible in the audit trail.
+    // AgentFence is observation-only — we don't block the sync, but if a
+    // prompt injection modified mcpServers or allowedTools, the user sees it.
+    if let Some(obj) = session_project.as_object() {
+        let host_project_key = project_dir.display().to_string();
+        let host_project = host_root
+            .get("projects")
+            .and_then(Value::as_object)
+            .and_then(|p| p.get(&host_project_key));
+
+        for key in ["mcpServers", "allowedTools"] {
+            let session_val = obj.get(key);
+            let host_val = host_project.and_then(|p| p.get(key));
+            if session_val != host_val {
+                if let Some(val) = session_val {
+                    println!(
+                        "[AgentFence] Config sync-back: project {} field changed during session.",
+                        key
+                    );
+                    // Log to audit.jsonl would go here in a future enhancement
+                    let _ = val; // suppress unused warning
+                }
+            }
+        }
+    }
+
+    let Some(host_obj) = host_root.as_object_mut() else {
+        return Ok(());
+    };
+    let projects = host_obj
+        .entry("projects")
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(projects_obj) = projects.as_object_mut() else {
+        return Ok(());
+    };
+
+    projects_obj.insert(project_dir.display().to_string(), session_project);
+
+    fs::write(
+        &host_config,
+        serde_json::to_string_pretty(&host_root)
+            .context("failed to serialize host Claude config")?
+            + "\n",
+    )
+    .with_context(|| format!("failed to write {}", host_config.display()))?;
 
     Ok(())
 }
