@@ -683,11 +683,11 @@ fn auto_discovered_ssh_mounts(
     Ok(paths)
 }
 
-/// Env vars that are safe to auto-pass because they're needed for core agent
-/// workflows (git operations) and are compiled into AgentFence, not derived
-/// from project text. These are auto-passed regardless of what the project
-/// text says — the trust is in the AgentFence source code.
-const SAFE_AUTO_PASS_ENV_VARS: &[&str] = &["GH_TOKEN", "GITHUB_TOKEN"];
+// No env vars are unconditionally auto-passed. Previously GH_TOKEN and
+// GITHUB_TOKEN were in a SAFE_AUTO_PASS_ENV_VARS list, but that contradicts
+// the principle that nothing from the host enters the container without
+// explicit user action. Agent-specific hints (from agent_auth_env_hints)
+// are still auto-passed since the user chose the agent.
 
 fn auto_discovered_env_vars(
     report: &crate::discovery::HostScanReport,
@@ -708,7 +708,6 @@ fn auto_discovered_env_vars(
     // host secrets.
     let mut names: Vec<String> = agent_auth_env_hints(agent)
         .iter()
-        .chain(SAFE_AUTO_PASS_ENV_VARS.iter())
         .map(|name| (*name).to_string())
         .filter(|name| env::var_os(name).is_some())
         .collect();
