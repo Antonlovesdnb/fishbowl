@@ -107,6 +107,10 @@ struct RunArgs {
     #[arg(long, hide = true)]
     ebpf_file: bool,
 
+    /// Skip reading .agentfence.toml from the project directory.
+    #[arg(long, hide = true)]
+    no_config: bool,
+
     /// Command to execute inside the container instead of the default shell.
     #[arg(trailing_var_arg = true, value_name = "COMMAND")]
     command: Vec<String>,
@@ -211,23 +215,6 @@ fn add_mount(entry: &str, ssh: &mut Vec<PathBuf>, creds: &mut Vec<PathBuf>, envs
     }
 }
 
-fn parse_network_mode(value: &str) -> Option<NetworkMode> {
-    match value {
-        "bridge" => Some(NetworkMode::Bridge),
-        "host" => Some(NetworkMode::Host),
-        _ => None,
-    }
-}
-
-fn parse_monitor_mode(value: &str) -> Option<MonitorMode> {
-    match value {
-        "auto" => Some(MonitorMode::Auto),
-        "basic" => Some(MonitorMode::Basic),
-        "strong" => Some(MonitorMode::Strong),
-        _ => None,
-    }
-}
-
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
@@ -236,12 +223,20 @@ pub fn run() -> Result<()> {
         Command::Audit(args) => audit::run_audit(args.session),
         Command::Run(args) => {
             let project_dir = &args.project;
-            let project_config = config::load_project_config(project_dir);
+            let project_config = if args.no_config {
+                None
+            } else {
+                config::load_project_config(project_dir)
+            };
 
             let (mut ssh_mounts, mut cred_mounts, mut env_vars) =
                 (args.ssh_mounts, args.cred_mounts, args.env_vars);
 
-            // Config file mounts first.
+            // Config file mounts are applied (equivalent to --mount on the CLI).
+            // Network and monitor overrides from config are NOT applied — those
+            // are security posture changes that should only come from CLI flags.
+            // A malicious repo's .agentfence.toml could set network = "host"
+            // or monitor = "basic" to weaken isolation.
             if let Some(ref config) = project_config {
                 for entry in &config.mounts {
                     add_mount(entry, &mut ssh_mounts, &mut cred_mounts, &mut env_vars);
@@ -253,26 +248,10 @@ pub fn run() -> Result<()> {
                 add_mount(entry, &mut ssh_mounts, &mut cred_mounts, &mut env_vars);
             }
 
-            // Resolve network and monitor: CLI flag > config > default.
-            let network_mode = args
-                .network
-                .or_else(|| {
-                    project_config
-                        .as_ref()
-                        .and_then(|c| c.network.as_deref())
-                        .and_then(parse_network_mode)
-                })
-                .unwrap_or(NetworkMode::Bridge);
-
-            let monitor = args
-                .monitor
-                .or_else(|| {
-                    project_config
-                        .as_ref()
-                        .and_then(|c| c.monitor.as_deref())
-                        .and_then(parse_monitor_mode)
-                })
-                .unwrap_or(MonitorMode::Auto);
+            // Network and monitor: CLI flags only. Project config values are
+            // intentionally ignored (printed as warnings in config.rs).
+            let network_mode = args.network.unwrap_or(NetworkMode::Bridge);
+            let monitor = args.monitor.unwrap_or(MonitorMode::Auto);
 
             let options = RunOptions {
                 project_dir: args.project,
