@@ -30,8 +30,7 @@ case "$OS" in
   Darwin)
     case "$ARCH" in
       arm64|aarch64) TARGET="aarch64-apple-darwin" ;;
-      x86_64)        TARGET="x86_64-apple-darwin" ;;
-      *) err "unsupported macOS architecture: $ARCH" ;;
+      *) err "unsupported macOS architecture: $ARCH (only Apple Silicon is supported)" ;;
     esac
     ;;
   Linux)

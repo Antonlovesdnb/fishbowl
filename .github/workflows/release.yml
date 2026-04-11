@@ -29,11 +29,6 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-14
-          - target: x86_64-apple-darwin
-            # macos-13 (Intel) was retired by GitHub. Cross-compile from the
-            # arm64 macos-14 runner — Apple's toolchain handles this natively
-            # and AgentFence has no native deps that would complicate it.
-            runner: macos-14
           - target: x86_64-unknown-linux-musl
             runner: ubuntu-latest
             apt_packages: musl-tools

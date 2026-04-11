@@ -40,37 +40,19 @@ When you run `agentfence run ~/my-project`, this is what happens:
 
 ## Install
 
-### Prebuilt binary
-
-macOS and Linux binaries are published with each [tagged release](https://github.com/Antonlovesdnb/AgentFence/releases). The release includes four targets:
-
-| Binary | Platform | Notes |
-|---|---|---|
-| `agentfence-vX.Y.Z-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon | Native arm64 |
-| `agentfence-vX.Y.Z-x86_64-apple-darwin.tar.gz` | macOS Intel | Cross-compiled from arm64 |
-| `agentfence-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz` | Linux x86_64 | Fully static (musl libc), runs on any distro including Alpine |
-| `agentfence-vX.Y.Z-aarch64-unknown-linux-musl.tar.gz` | Linux arm64 | Fully static (musl libc) |
-
-The `unknown` in the Linux target names is Rust's standard [target triple](https://doc.rust-lang.org/rustc/platform-support.html) format: `<arch>-<vendor>-<os>-<libc>`. "unknown" means "no specific vendor" — it's not a bug. The `musl` suffix means the binary is statically linked against musl libc instead of glibc, so it runs on any Linux distribution without shared library dependencies.
-
-**Quick install** (auto-detects OS/arch, verifies SHA256):
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh
 ```
 
-Pin a version: `AGENTFENCE_VERSION=v0.1.8`. Override install dir: `AGENTFENCE_BIN_DIR=~/.local/bin`.
+That's it. The script auto-detects your OS and architecture, downloads the right binary and the collector image from the latest [GitHub release](https://github.com/Antonlovesdnb/AgentFence/releases), verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if no write access).
 
-You still need a container runtime (Docker Desktop, Colima, OrbStack, or Rancher Desktop) running.
+**Supported platforms:** macOS (Apple Silicon) and Linux (x86_64 + arm64). Linux binaries are fully static (musl libc) so they run on any distro including Alpine.
 
-### From source
+**Requirements:** a container runtime — Docker Desktop, Colima, OrbStack, or Rancher Desktop — must be running before `agentfence run`.
 
-```bash
-cargo install --path .
-agentfence build-image
-```
+**Options:** pin a version with `AGENTFENCE_VERSION=v0.1.9`, override the install directory with `AGENTFENCE_BIN_DIR=...`.
 
-Requires Rust >= 1.85 (edition 2024). Source installs get both the agent image and the collector image, which enables strong monitoring on macOS.
+> **Building from source:** `cargo install --path . && agentfence build-image` (requires Rust >= 1.85). Only needed if you're contributing or want to modify the container image.
 
 ## Usage
 
