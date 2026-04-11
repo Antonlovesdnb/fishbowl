@@ -25,16 +25,6 @@ pub fn load_project_config(project_dir: &Path) -> Option<ProjectConfig> {
         config_path.display()
     );
 
-    // Print what the config adds so the user sees it in the startup output.
-    // A malicious repo could include a .agentfence.toml that mounts host
-    // credentials — printing makes it visible.
-    if !config.mounts.is_empty() {
-        println!(
-            "[AgentFence] Config mounts: {}",
-            config.mounts.join(", ")
-        );
-    }
-
     // Network and monitor overrides from project config are security posture
     // changes. A malicious repo could set network = "host" (bypass network
     // isolation) or monitor = "basic" (disable strong monitoring). These
