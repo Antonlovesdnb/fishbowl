@@ -1219,7 +1219,9 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) ->
                 "[AgentFence] Config sync-back: project {key} was {change_type} during session."
             );
 
-            // Write a durable audit event so the change is in the session record.
+            // Write a durable audit event with a redacted summary. MCP configs
+            // can contain env maps, tokens, and server URLs — logging the full
+            // values would put credential material into audit.jsonl.
             if let Some(ref audit_path) = audit_log {
                 let event = json!({
                     "timestamp": crate::ebpf::utc_now_iso(),
@@ -1227,8 +1229,7 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) ->
                     "severity": "medium",
                     "field": key,
                     "change": change_type,
-                    "session_value": session_val,
-                    "host_value": host_val,
+                    "summary": summarize_config_change(key, host_val, session_val),
                     "reason": format!("project config field {key} was {change_type} inside the container and synced back to the host"),
                 });
                 if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(audit_path) {
@@ -1259,6 +1260,65 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) ->
     .with_context(|| format!("failed to write {}", host_config.display()))?;
 
     Ok(())
+}
+
+/// Produces a redacted summary of a config field change for the audit log.
+/// Extracts structural info (server names, tool names, key counts) without
+/// logging actual values (tokens, env maps, URLs).
+fn summarize_config_change(field: &str, before: Option<&Value>, after: Option<&Value>) -> Value {
+    match field {
+        "mcpServers" => {
+            let before_names = extract_object_keys(before);
+            let after_names = extract_object_keys(after);
+            let added: Vec<&str> = after_names.iter().filter(|n| !before_names.contains(n)).map(|s| s.as_str()).collect();
+            let removed: Vec<&str> = before_names.iter().filter(|n| !after_names.contains(n)).map(|s| s.as_str()).collect();
+            json!({
+                "servers_before": before_names,
+                "servers_after": after_names,
+                "added": added,
+                "removed": removed,
+            })
+        }
+        "allowedTools" | "enabledMcpTools" | "trustedTools" => {
+            let before_list = extract_string_array(before);
+            let after_list = extract_string_array(after);
+            let added: Vec<&str> = after_list.iter().filter(|t| !before_list.contains(t)).map(|s| s.as_str()).collect();
+            let removed: Vec<&str> = before_list.iter().filter(|t| !after_list.contains(t)).map(|s| s.as_str()).collect();
+            json!({
+                "count_before": before_list.len(),
+                "count_after": after_list.len(),
+                "added": added,
+                "removed": removed,
+            })
+        }
+        _ => json!({
+            "before_type": before.map(value_type_name),
+            "after_type": after.map(value_type_name),
+        }),
+    }
+}
+
+fn extract_object_keys(val: Option<&Value>) -> Vec<String> {
+    val.and_then(Value::as_object)
+        .map(|obj| obj.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn extract_string_array(val: Option<&Value>) -> Vec<String> {
+    val.and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .unwrap_or_default()
+}
+
+fn value_type_name(val: &Value) -> &'static str {
+    match val {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
 }
 
 fn sync_codex_session_back(project_dir: &Path, runtime_auth_dir: &Path) -> Result<()> {
