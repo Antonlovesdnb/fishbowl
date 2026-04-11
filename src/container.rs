@@ -567,9 +567,18 @@ fn finalize_session(
 fn auto_discovered_ssh_mounts(
     report: &crate::discovery::HostScanReport,
 ) -> Result<Vec<PathBuf>> {
+    // Only auto-mount SSH keys that are explicitly referenced in the user's
+    // ~/.ssh/config via IdentityFile directives. Previously this also had a
+    // "GitHub fallback" that auto-mounted id_ed25519/id_rsa when the project
+    // had a github.com remote — but that let a malicious repo with a fake
+    // GitHub remote silently import the user's SSH private key into the
+    // container. Removed: users should --mount their SSH keys explicitly,
+    // or put them in .agentfence.toml.
     let mut paths = Vec::new();
-    let key_hints = &report.project_context.suggested_ssh_key_names;
-    let remote_hosts = &report.project_context.git_remote_hosts;
+
+    // Filter key_hints to only those from ~/.ssh/config (user-controlled),
+    // not from project text scanning (project-controlled).
+    let user_key_hints = user_ssh_config_identity_files();
 
     for finding in &report.findings {
         if finding.mount_kind.as_deref() != Some("ssh") {
@@ -584,31 +593,112 @@ fn auto_discovered_ssh_mounts(
             continue;
         };
 
-        let exact_match = key_hints.iter().any(|hint| hint == file_name);
-        let github_fallback =
-            key_hints.is_empty() && remote_hosts.iter().any(|host| host == "github.com")
-                && matches!(file_name, "id_ed25519" | "id_rsa" | "condef_git_key");
-
-        if exact_match || github_fallback {
+        if user_key_hints.iter().any(|hint| hint == file_name) {
             paths.push(path);
         }
     }
+
+    // Print recommendation for keys that were found but not auto-mounted.
+    let remote_hosts = &report.project_context.git_remote_hosts;
+    if paths.is_empty() && !remote_hosts.is_empty() {
+        let ssh_keys: Vec<&str> = report
+            .findings
+            .iter()
+            .filter(|f| f.mount_kind.as_deref() == Some("ssh"))
+            .filter_map(|f| {
+                Path::new(&f.path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+            })
+            .collect();
+        if !ssh_keys.is_empty() {
+            println!(
+                "[AgentFence] SSH keys found on host ({}) but not auto-mounted. Use --mount ~/.ssh/<key> to pass them explicitly.",
+                ssh_keys.join(", ")
+            );
+        }
+    }
+
     Ok(paths)
+}
+
+/// Returns SSH key file names referenced in the user's ~/.ssh/config via
+/// IdentityFile directives. These are user-controlled (the user wrote their
+/// SSH config) and safe to auto-mount. Project text file references are
+/// excluded because project content is untrusted.
+fn user_ssh_config_identity_files() -> Vec<String> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    let ssh_config = home.join(".ssh").join("config");
+    if !ssh_config.is_file() {
+        return Vec::new();
+    }
+    let Ok(text) = fs::read_to_string(&ssh_config) else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.to_ascii_lowercase().starts_with("identityfile ") {
+            if let Some(value) = trimmed.split_whitespace().nth(1) {
+                let path = value.trim_matches('"').trim_matches('\'');
+                if let Some(name) = Path::new(path).file_name().and_then(|n| n.to_str()) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
 }
 
 fn auto_discovered_env_vars(
     report: &crate::discovery::HostScanReport,
     agent: Agent,
 ) -> Vec<String> {
-    let mut names = Vec::new();
-    names.extend(agent_auth_env_hints(agent).iter().map(|name| (*name).to_string()));
-    names.extend(report.project_context.referenced_env_vars.iter().cloned());
+    // Only auto-pass env vars from the hardcoded agent-specific hint list.
+    // These are compiled into AgentFence (not project-controlled) and only
+    // contain the vars the detected agent actually needs to authenticate.
+    //
+    // Previously this also included report.project_context.referenced_env_vars
+    // (env var names found in project text files), but that let a malicious
+    // repo mention AWS_SECRET_ACCESS_KEY in its README and silently import
+    // the host's actual secret into the container. Project-discovered vars
+    // are now printed as a recommendation instead of auto-passed.
+    let mut names: Vec<String> = agent_auth_env_hints(agent)
+        .iter()
+        .map(|name| (*name).to_string())
+        .filter(|name| env::var_os(name).is_some())
+        .collect();
     names.sort();
     names.dedup();
-    names
-        .into_iter()
+
+    // Print recommendation for project-referenced vars that are set on the
+    // host but NOT auto-passed.
+    let project_vars: Vec<&String> = report
+        .project_context
+        .referenced_env_vars
+        .iter()
         .filter(|name| env::var_os(name).is_some())
-        .collect()
+        .filter(|name| !names.contains(name))
+        .collect();
+    if !project_vars.is_empty() {
+        let var_list = project_vars
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "[AgentFence] Project references credential env vars set on this host: {var_list}"
+        );
+        println!(
+            "[AgentFence] These are NOT auto-passed into the container. Use --mount <NAME> to pass them explicitly."
+        );
+    }
+
+    names
 }
 
 fn auto_discovered_agent_runtime_mounts(agent: Agent) -> Result<Vec<MaterializedMount>> {

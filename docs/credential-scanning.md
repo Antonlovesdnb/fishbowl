@@ -286,7 +286,13 @@ Grouped by category:
 2. `host_scan.json` is written to a **host-only location** (`~/.agentfence/host-scans/`) — it is NOT visible inside the container
 3. `project_scan` findings are translated to in-container paths and seeded into `registry.json`
 4. `host_scan` findings for the selected agent's auth files are seeded via `auto_auth_path_aliases`
-5. Auto-discovered SSH keys matching the project's git remotes are bind-mounted into `/agentfence/ssh/`
-6. Auto-discovered credential env vars are passed through to the container
+5. SSH keys referenced in the user's `~/.ssh/config` (IdentityFile directives) are auto-mounted into `/agentfence/ssh/`
+6. Agent-specific env vars (hardcoded per agent type, e.g. `OPENAI_API_KEY` for Cursor) are auto-passed if set on the host
 
-Source: `src/discovery.rs`
+## What is NOT auto-passed (security boundary)
+
+**Credential env vars discovered in project text files** (e.g., a README that mentions `AWS_SECRET_ACCESS_KEY`) are printed as recommendations but NOT auto-passed into the container. This prevents a malicious repo from silently importing host secrets by mentioning them in its text files. Use `--mount <NAME>` or `.agentfence.toml` to pass them explicitly.
+
+**SSH keys not referenced in `~/.ssh/config`** are NOT auto-mounted, even if the project has a matching git remote. A previous "GitHub fallback" that auto-mounted `id_ed25519`/`id_rsa` for any GitHub-remote project was removed because a repo with a fake GitHub remote could trigger it. Use `--mount ~/.ssh/<key>` to mount SSH keys explicitly.
+
+Source: `src/discovery.rs`, `src/container.rs`
