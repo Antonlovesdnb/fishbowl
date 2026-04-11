@@ -609,91 +609,28 @@ fn finalize_session(
 fn auto_discovered_ssh_mounts(
     report: &crate::discovery::HostScanReport,
 ) -> Result<Vec<PathBuf>> {
-    // Only auto-mount SSH keys that are explicitly referenced in the user's
-    // ~/.ssh/config via IdentityFile directives. Previously this also had a
-    // "GitHub fallback" that auto-mounted id_ed25519/id_rsa when the project
-    // had a github.com remote — but that let a malicious repo with a fake
-    // GitHub remote silently import the user's SSH private key into the
-    // container. Removed: users should --mount their SSH keys explicitly,
-    // or put them in .agentfence.toml.
-    let mut paths = Vec::new();
+    // No SSH keys are auto-mounted. The previous implementation read all
+    // IdentityFile directives from ~/.ssh/config and mounted any matching
+    // host key — but that's unscoped to the current repo's remote hosts,
+    // so a user with many SSH host entries would expose unrelated private
+    // keys to every AgentFence run. Proper Host-block parsing scoped to
+    // git remotes is complex (wildcards, Match blocks, ProxyJump chains).
+    // The safer default is: print what was found, require --mount.
+    let ssh_keys: Vec<&str> = report
+        .findings
+        .iter()
+        .filter(|f| f.mount_kind.as_deref() == Some("ssh"))
+        .filter_map(|f| Path::new(&f.path).file_name().and_then(|n| n.to_str()))
+        .collect();
 
-    // Filter key_hints to only those from ~/.ssh/config (user-controlled),
-    // not from project text scanning (project-controlled).
-    let user_key_hints = user_ssh_config_identity_files();
-
-    for finding in &report.findings {
-        if finding.mount_kind.as_deref() != Some("ssh") {
-            continue;
-        }
-        let path = PathBuf::from(&finding.path);
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-
-        if user_key_hints.iter().any(|hint| hint == file_name) {
-            paths.push(path);
-        }
+    if !ssh_keys.is_empty() && !report.project_context.git_remote_hosts.is_empty() {
+        println!(
+            "[AgentFence] SSH keys found on host ({}) but not auto-mounted. Use --mount ~/.ssh/<key> to pass them explicitly.",
+            ssh_keys.join(", ")
+        );
     }
 
-    // Print recommendation for keys that were found but not auto-mounted.
-    let remote_hosts = &report.project_context.git_remote_hosts;
-    if paths.is_empty() && !remote_hosts.is_empty() {
-        let ssh_keys: Vec<&str> = report
-            .findings
-            .iter()
-            .filter(|f| f.mount_kind.as_deref() == Some("ssh"))
-            .filter_map(|f| {
-                Path::new(&f.path)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-            })
-            .collect();
-        if !ssh_keys.is_empty() {
-            println!(
-                "[AgentFence] SSH keys found on host ({}) but not auto-mounted. Use --mount ~/.ssh/<key> to pass them explicitly.",
-                ssh_keys.join(", ")
-            );
-        }
-    }
-
-    Ok(paths)
-}
-
-/// Returns SSH key file names referenced in the user's ~/.ssh/config via
-/// IdentityFile directives. These are user-controlled (the user wrote their
-/// SSH config) and safe to auto-mount. Project text file references are
-/// excluded because project content is untrusted.
-fn user_ssh_config_identity_files() -> Vec<String> {
-    let Some(home) = dirs::home_dir() else {
-        return Vec::new();
-    };
-    let ssh_config = home.join(".ssh").join("config");
-    if !ssh_config.is_file() {
-        return Vec::new();
-    }
-    let Ok(text) = fs::read_to_string(&ssh_config) else {
-        return Vec::new();
-    };
-    let mut names = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.to_ascii_lowercase().starts_with("identityfile ") {
-            if let Some(value) = trimmed.split_whitespace().nth(1) {
-                let path = value.trim_matches('"').trim_matches('\'');
-                if let Some(name) = Path::new(path).file_name().and_then(|n| n.to_str()) {
-                    names.push(name.to_string());
-                }
-            }
-        }
-    }
-    names.sort();
-    names.dedup();
-    names
+    Ok(Vec::new())
 }
 
 /// Env vars that are safe to auto-pass because they're needed for core agent
