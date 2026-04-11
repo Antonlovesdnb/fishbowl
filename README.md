@@ -1,52 +1,10 @@
 # AgentFence
 
-```mermaid
-graph TB
-    subgraph HOST ["Your Dev Machine"]
-        subgraph FENCE ["AgentFence Container"]
-            AGENT["AI Agent<br/><i>Codex / Claude Code</i>"]
-            AGENT -->|"$ npm install<br/>$ curl api.example.com<br/>$ cat .env"| ACTIVITY[" "]
-            style ACTIVITY fill:none,stroke:none
-
-            subgraph WATCHERS ["In-Container Watchers"]
-                BASH["Bash env hooks"]
-                FILE["File watcher"]
-                NET["Network poller"]
-            end
-        end
-
-        subgraph EBPF ["Host-Side eBPF Observers"]
-            EXEC_PROBE["exec collector<br/><i>every process spawn</i>"]
-            NET_PROBE["connect collector<br/><i>every network call</i>"]
-            FILE_PROBE["file collector<br/><i>credential file access</i>"]
-        end
-
-        subgraph LOGS ["Session Logs  (~/.agentfence/logs/)"]
-            AUDIT["audit.jsonl"]
-            REGISTRY["registry.json"]
-            EBPF_LOGS["ebpf_exec / connect / file .jsonl"]
-            FINDINGS["findings.jsonl"]
-        end
-    end
-
-    AGENT -.->|observed by| WATCHERS
-    AGENT -.->|observed by| EBPF
-    WATCHERS --> AUDIT
-    WATCHERS --> REGISTRY
-    EBPF --> EBPF_LOGS
-    EBPF_LOGS -->|correlated| FINDINGS
-
-    REVIEW["agentfence audit → session report"]
-    LOGS --> REVIEW
-
-    style FENCE fill:#1a1a2e,stroke:#e94560,stroke-width:2px,color:#eee
-    style HOST fill:#0f0f1a,stroke:#444,color:#eee
-    style EBPF fill:#16213e,stroke:#0f3460,color:#eee
-    style LOGS fill:#1a1a2e,stroke:#533483,color:#eee
-    style WATCHERS fill:#222,stroke:#666,color:#eee
-    style AGENT fill:#e94560,stroke:#e94560,color:#fff
-    style REVIEW fill:#533483,stroke:#533483,color:#fff
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/architecture-light.svg">
+  <img alt="AgentFence architecture" src="docs/architecture-light.svg" width="720">
+</picture>
 
 A containerized credential auditing perimeter for AI coding agents. Validated end-to-end with **Codex** and **Claude Code** on both macOS and Linux.
 
