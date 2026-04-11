@@ -34,7 +34,9 @@
 
 A containerized credential auditing perimeter for AI coding agents. Validated end-to-end with **Codex** and **Claude Code** on both macOS and Linux.
 
-AgentFence wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only — it doesn't block or kill anything the agent does. The container itself is the security boundary: all Linux capabilities are dropped, privilege escalation is disabled, and the agent can only see the project directory, selected credentials, and session logs that you choose to mount in.
+AgentFence wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only — it doesn't block or kill anything the agent does.
+
+The container is the security boundary. The agent can see your project directory, its own auth files (auto-mounted copies of `~/.codex/` or `~/.claude/`), any credentials you explicitly `--mount`, and the session logs — but not the rest of your home directory or system. The container filesystem is read-only, all Linux capabilities are dropped, and privilege escalation is disabled.
 
 ## How it works
 
