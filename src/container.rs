@@ -251,6 +251,15 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         eprintln!("[AgentFence] Failed to seed credential registry from host scan: {err:#}");
     }
 
+    // host_scan.json contains the full credential path enumeration of the
+    // host — ~/.aws/credentials, ~/.docker/config.json, etc. The seed
+    // function already consumed the findings from the in-memory struct, and
+    // agentfence audit doesn't read this file. Remove it from the
+    // container-visible logs dir before the container starts so a prompt-
+    // injected agent can't enumerate credential locations it wouldn't
+    // otherwise know about. Move to a host-only location for manual review.
+    relocate_host_scan_report(&logs_dir);
+
     let mut command = Command::new("docker");
     command.arg("run").arg("--rm");
 
@@ -1713,6 +1722,47 @@ fn seed_registry_from_host_scan(
     Ok(())
 }
 
+/// Moves host_scan.json out of the container-visible session logs directory
+/// into a host-only location. The file enumerates every credential path found
+/// on the host (including things NOT mounted into the container), so exposing
+/// it to the agent is an information leak that AgentFence itself creates.
+///
+/// The host-only copy lives at `~/.agentfence/host-scans/<session-name>.json`
+/// and is preserved for manual inspection or future audit enhancements.
+fn relocate_host_scan_report(logs_dir: &Path) {
+    let src = logs_dir.join("host_scan.json");
+    if !src.exists() {
+        return;
+    }
+
+    let session_name = logs_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown-session");
+
+    let host_scans_dir = match agentfence_data_root() {
+        Ok(root) => root.join("host-scans"),
+        Err(_) => {
+            // Can't determine host-scans dir; just delete the file.
+            let _ = fs::remove_file(&src);
+            return;
+        }
+    };
+
+    if fs::create_dir_all(&host_scans_dir).is_ok() {
+        let dst = host_scans_dir.join(format!("{session_name}.json"));
+        if fs::rename(&src, &dst).is_err() {
+            // rename fails across filesystems; fall back to copy + delete
+            if fs::copy(&src, &dst).is_ok() {
+                let _ = fs::remove_file(&src);
+            }
+        }
+    } else {
+        // Can't create host-scans dir; just delete the file.
+        let _ = fs::remove_file(&src);
+    }
+}
+
 fn prepare_session_log_files(logs_dir: &Path) -> Result<()> {
     for file_name in [
         "audit.jsonl",
@@ -1878,6 +1928,11 @@ fn cleanup_stale_runtime_auth_dirs(max_age: Duration) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn agentfence_data_root() -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
+    Ok(home.join(".agentfence"))
 }
 
 fn agentfence_runtime_root() -> Result<PathBuf> {
