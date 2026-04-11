@@ -423,12 +423,36 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         }
     }
 
-    for name in &env_vars {
-        let value = env::var(name)
-            .with_context(|| format!("environment variable `{name}` is not set on the host"))?;
-        command.arg("--env").arg(format!("{name}={value}"));
-    }
+    // Pass credential env vars via a temporary --env-file instead of --env
+    // CLI args. Docker --env NAME=VALUE exposes the full secret in the host's
+    // process table (ps aux, /proc/PID/cmdline). The env-file is created with
+    // 0600 permissions and deleted after the container starts.
+    let env_file = if !env_vars.is_empty() {
+        let env_file_path = logs_dir.join(".env-pass");
+        let mut env_content = String::new();
+        for name in &env_vars {
+            let value = env::var(name)
+                .with_context(|| format!("environment variable `{name}` is not set on the host"))?;
+            // Docker env-file format: NAME=VALUE, one per line.
+            // Values with newlines are not supported; skip them with a warning.
+            if value.contains('\n') {
+                eprintln!("[AgentFence] WARNING: skipping env var {name} (value contains newlines, not supported by --env-file)");
+                continue;
+            }
+            env_content.push_str(&format!("{name}={value}\n"));
+        }
+        fs::write(&env_file_path, &env_content)
+            .with_context(|| format!("failed to write env-file {}", env_file_path.display()))?;
+        #[cfg(unix)]
+        fs::set_permissions(&env_file_path, fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("failed to set permissions on {}", env_file_path.display()))?;
+        command.arg("--env-file").arg(&env_file_path);
+        Some(env_file_path)
+    } else {
+        None
+    };
 
+    // Non-secret env vars are fine as CLI args (no credential values).
     command
         .arg("--env")
         .arg(format!("AGENTFENCE_AGENT={}", selected_agent));
@@ -512,6 +536,9 @@ pub fn run_container(options: RunOptions) -> Result<()> {
             &container_name,
             &logs_dir,
         )?;
+        if let Some(ref path) = env_file {
+            let _ = fs::remove_file(path);
+        }
         merge_watcher_output(&logs_dir);
         return finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status);
     }
@@ -524,6 +551,9 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         &logs_dir,
     )?;
 
+    if let Some(ref path) = env_file {
+        let _ = fs::remove_file(path);
+    }
     merge_watcher_output(&logs_dir);
     finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status)
 }

@@ -61,7 +61,7 @@ Key paths:
 - Runtime auth dirs: `~/.agentfence/runtime/{session-nonce}/` (0o700, cleaned up after 6h)
 - Container HOME: `/agentfence/home` (bind-mounted from host runtime dir, 0o700)
 
-**Credential values are never logged.** Env var previews are redacted to 4 chars + length in `redact_env_value()` (`ebpf.rs`). The `host_scan.json` file lists credential PATHS only (no contents) and is relocated out of the container-visible mount before the agent starts.
+**Full credential values are not intentionally logged.** Env var previews include a short prefix (first 4 chars + length) via `redact_env_value()` in `ebpf.rs`. Credential env vars are passed to Docker via `--env-file` (not `--env` CLI args) to avoid exposure in the host process table. The `host_scan.json` file lists credential PATHS only (no contents) and is relocated out of the container-visible mount before the agent starts.
 
 ## Build / run / test
 

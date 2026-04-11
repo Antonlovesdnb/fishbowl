@@ -132,7 +132,7 @@ All session data lives under `~/.agentfence/logs/`:
 
 Event types: `process_exec`, `env_mutation`, `env_enumeration`, `credential_discovery`, `credential_access`, `network_egress`, `workspace_credential_access`.
 
-Credential values are **never logged**. Environment variable previews are redacted to the first 4 characters + length.
+Full credential values are **not intentionally logged**. Environment variable findings include a short preview (first 4 characters + length) for classification purposes — e.g. `sk-p...(redacted,len=48)`. Credential env vars are passed to Docker via `--env-file` (not CLI args) to avoid exposure in the host process table.
 
 **registry.json** — live credential registry, updated as credentials are discovered and accessed:
 
