@@ -179,11 +179,10 @@ fn classify_mount(value: &str) -> MountKind {
 }
 
 fn is_env_var_name(value: &str) -> bool {
-    if value.is_empty() {
-        return false;
-    }
     let mut chars = value.chars();
-    let first = chars.next().unwrap();
+    let Some(first) = chars.next() else {
+        return false;
+    };
     if !first.is_ascii_uppercase() && first != '_' {
         return false;
     }

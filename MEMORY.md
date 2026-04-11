@@ -80,37 +80,37 @@ agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
 | U1 | No `agentfence audit` subcommand | FIXED (implemented in `src/audit.rs`) |
 | U3 | No auto-build on first run | FIXED (Pass 3) |
 | U4 | No config file support | FIXED (`.agentfence.toml` loader in `src/config.rs`) |
+| S8 | Container filesystem is read-write | FIXED (`--read-only` + `--tmpfs /tmp` + `--tmpfs /run` in `container.rs`) |
 
 ## Open security findings
 
 ### HIGH
-| ID | File | Summary |
-|----|------|---------|
-| S4 | `src/container.rs:1124` | `seed_workspace_trust` auto-accepts Claude's trust dialog without consent |
-| S5 | `container/network_watcher.py` | DNS/UDP exfiltration unmonitored — only TCP via `ss -tpnH` |
-| S6 | `container/network_watcher.py` | Short-lived connections evade `ss` polling window |
-| S7 | `container/bash_env.sh` | Shell hook bypass — `sh` / `dash` / `python` / `node` skip env auditing |
+| ID | Summary |
+|----|---------|
+| S4 | `seed_workspace_trust` auto-accepts Claude's trust dialog without consent |
+| S5 | DNS/UDP exfiltration unmonitored — only TCP via `ss -tpnH` (container-local watcher gap; eBPF covers it) |
+| S6 | Short-lived connections evade `ss` polling window (container-local watcher gap; eBPF covers it) |
+| S7 | Shell hook bypass — `sh` / `dash` / `python` / `node` skip env auditing (container-local watcher gap; eBPF covers it) |
 
 ### MEDIUM
-| ID | File | Summary |
-|----|------|---------|
-| S8 | `src/container.rs:219` | Container filesystem is read-write (no `--read-only`) |
-| S9 | `src/container.rs:228` | `--network host` warning is too subtle |
-| S10 | `container/audit_log.py` | No audit log integrity protection (no HMAC, sequence, or hash chain) |
-| S11 | `container/entrypoint.sh:23` | `npm install -g` runs as root with suppressed output (dead per N11, still present) |
-| S12 | `container/file_watcher.py:76` | inotifywait process-attribution race (inherent — eBPF solves) |
-| N3 | `src/ebpf.rs:1472` | eBPF exec env audit reads `/proc/PID/environ` on every execve |
-| N10 | `container/Dockerfile:6` | `/tmp/agentfence-npm/bin` in PATH is binary-hijack vector |
+| ID | Summary |
+|----|---------|
+| S9 | `--network host` warning is too subtle |
+| S10 | No audit log integrity protection (no HMAC, sequence, or hash chain) |
+| S11 | `npm install -g` runs as root with suppressed output in entrypoint (dead per N11, still present) |
+| S12 | inotifywait process-attribution race (inherent — eBPF solves) |
+| N3 | eBPF exec env audit reads `/proc/PID/environ` on every execve |
+| N10 | `/tmp/agentfence-npm/bin` in PATH is binary-hijack vector |
 
 ### LOW
-| ID | File | Summary |
-|----|------|---------|
-| S13 | `container/network_watcher.py:227` | `seen` dedup set grows unboundedly |
-| S14 | `container/workspace_watcher.py` | Workspace 1 MB scan limit |
-| S15 | `container/bash_env.sh:297` | `PROMPT_COMMAND` self-protection lacking — attacker can strip hook |
-| N5 | `bash_env.sh` + `ebpf.rs` | Dangerous/credential var lists duplicated, can drift |
-| N8 / N12 | `src/container.rs:259` | Double bind-mount of project dir when workspace path differs |
-| N11 | `src/agent_runtime.rs:174` | Dead code: `package_names()` returns `&[]`, agent install never triggers |
+| ID | Summary |
+|----|---------|
+| S13 | `seen` dedup set in network_watcher grows unboundedly |
+| S14 | Workspace 1 MB scan limit |
+| S15 | `PROMPT_COMMAND` self-protection lacking — attacker can strip hook |
+| N5 | Dangerous/credential var lists duplicated between `bash_env.sh` and `ebpf.rs`, can drift |
+| N8 / N12 | Double bind-mount of project dir when workspace path differs |
+| N11 | Dead code: `package_names()` returns `&[]`, agent install never triggers |
 
 ## Open usability findings
 
