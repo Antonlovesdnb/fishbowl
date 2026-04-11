@@ -565,7 +565,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         )?;
         drop(env_file_guard);
         merge_watcher_output(&logs_dir);
-        return finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status);
+        return finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, &logs_dir, status);
     }
 
     let status = run_with_monitoring(
@@ -577,16 +577,17 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     )?;
     drop(env_file_guard);
     merge_watcher_output(&logs_dir);
-    finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status)
+    finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, &logs_dir, status)
 }
 
 fn finalize_and_cleanup_session(
     agent: Agent,
     project_dir: &Path,
     runtime_auth_dir: &Path,
+    logs_dir: &Path,
     status: std::process::ExitStatus,
 ) -> Result<()> {
-    let finalize_result = finalize_session(agent, project_dir, runtime_auth_dir, status);
+    let finalize_result = finalize_session(agent, project_dir, runtime_auth_dir, logs_dir, status);
     let cleanup_result = cleanup_runtime_auth_dir(runtime_auth_dir);
 
     match (finalize_result, cleanup_result) {
@@ -600,6 +601,7 @@ fn finalize_session(
     agent: Agent,
     project_dir: &Path,
     runtime_auth_dir: &Path,
+    logs_dir: &Path,
     status: std::process::ExitStatus,
 ) -> Result<()> {
     if !status.success() {
@@ -607,7 +609,7 @@ fn finalize_session(
     }
 
     if agent == Agent::ClaudeCode {
-        sync_claude_project_session_back(project_dir, runtime_auth_dir)?;
+        sync_claude_project_session_back(project_dir, runtime_auth_dir, logs_dir)?;
     }
     if agent == Agent::Codex {
         sync_codex_session_back(project_dir, runtime_auth_dir)?;
@@ -1099,7 +1101,7 @@ fn mirror_claude_project_sessions(
     Ok(())
 }
 
-fn sync_claude_project_session_back(project_dir: &Path, runtime_auth_dir: &Path) -> Result<()> {
+fn sync_claude_project_session_back(project_dir: &Path, runtime_auth_dir: &Path, logs_dir: &Path) -> Result<()> {
     let Some(home) = dirs::home_dir() else {
         return Ok(());
     };
@@ -1141,7 +1143,7 @@ fn sync_claude_project_session_back(project_dir: &Path, runtime_auth_dir: &Path)
     // expect those changes to persist. AgentFence is observation-only — we
     // log what changed rather than blocking the sync.
     let session_config = runtime_auth_dir.join("claude").join(".claude.json");
-    sync_claude_project_config_back(&session_config, project_dir)?;
+    sync_claude_project_config_back(&session_config, project_dir, logs_dir)?;
 
     println!(
         "[AgentFence] Synced Claude project session state back to {}",
@@ -1151,7 +1153,7 @@ fn sync_claude_project_session_back(project_dir: &Path, runtime_auth_dir: &Path)
     Ok(())
 }
 
-fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) -> Result<()> {
+fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path, logs_dir: &Path) -> Result<()> {
     if !session_config.is_file() {
         return Ok(());
     }
@@ -1198,8 +1200,7 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path) ->
             .and_then(Value::as_object)
             .and_then(|p| p.get(&host_project_key));
 
-        let audit_log = dirs::home_dir()
-            .map(|h| h.join(".agentfence").join("logs").join("latest").join("audit.jsonl"));
+        let audit_log = Some(logs_dir.join("audit.jsonl"));
 
         for key in tracked_fields {
             let session_val = obj.get(key);
