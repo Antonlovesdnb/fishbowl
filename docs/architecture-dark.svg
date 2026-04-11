@@ -1,91 +1,101 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 520" font-family="system-ui, -apple-system, sans-serif" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 600" font-family="system-ui, -apple-system, sans-serif" font-size="14">
   <defs>
     <filter id="shadow">
-      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.3"/>
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.4"/>
     </filter>
   </defs>
 
   <!-- Host background -->
-  <rect x="10" y="10" width="700" height="500" rx="12" fill="#1a1b26" stroke="#33384d" stroke-width="1.5"/>
-  <text x="30" y="36" font-size="11" font-weight="600" fill="#565f89" letter-spacing="1">YOUR DEV MACHINE</text>
+  <rect x="10" y="10" width="860" height="580" rx="14" fill="#1a1b26" stroke="#33384d" stroke-width="1.5"/>
+  <text x="32" y="38" font-size="13" font-weight="700" fill="#565f89" letter-spacing="1.5">YOUR DEV MACHINE</text>
 
   <!-- AgentFence container -->
-  <rect x="30" y="50" width="420" height="280" rx="10" fill="#1f2335" stroke="#f7768e" stroke-width="2" stroke-dasharray="8 4" filter="url(#shadow)"/>
-  <text x="50" y="74" font-size="14" font-weight="700" fill="#f7768e">AgentFence Container</text>
-  <text x="50" y="90" font-size="10" fill="#565f89">--cap-drop ALL  --read-only  --security-opt no-new-privileges</text>
+  <rect x="30" y="54" width="480" height="310" rx="12" fill="#1f2335" stroke="#f7768e" stroke-width="2.5" stroke-dasharray="10 5" filter="url(#shadow)"/>
+  <text x="54" y="82" font-size="18" font-weight="800" fill="#f7768e">AgentFence Container</text>
+  <text x="54" y="102" font-size="11" fill="#565f89" font-family="monospace">--cap-drop ALL  --read-only  --security-opt no-new-privileges</text>
 
   <!-- Agent box -->
-  <rect x="50" y="102" width="380" height="90" rx="8" fill="#292e42" stroke="#f7768e" stroke-width="1" opacity="0.8"/>
-  <text x="70" y="128" font-size="15" font-weight="700" fill="#f7768e">AI Agent</text>
-  <text x="163" y="128" font-size="13" fill="#787c99">(Codex / Claude Code)</text>
-  <text x="70" y="150" font-size="12" fill="#a9b1d6" font-family="monospace">$ npm install</text>
-  <text x="70" y="167" font-size="12" fill="#a9b1d6" font-family="monospace">$ curl api.example.com</text>
-  <text x="70" y="184" font-size="12" fill="#a9b1d6" font-family="monospace">$ cat .env</text>
+  <rect x="54" y="116" width="432" height="100" rx="10" fill="#292e42" stroke="#f7768e" stroke-width="1.5" opacity="0.85"/>
+  <text x="78" y="146" font-size="19" font-weight="800" fill="#f7768e">AI Agent</text>
+  <text x="190" y="146" font-size="15" fill="#787c99">(Codex / Claude Code)</text>
+  <text x="78" y="172" font-size="14" fill="#a9b1d6" font-family="monospace">$ npm install</text>
+  <text x="260" y="172" font-size="14" fill="#a9b1d6" font-family="monospace">$ curl api.example.com</text>
+  <text x="78" y="194" font-size="14" fill="#a9b1d6" font-family="monospace">$ cat .env</text>
+  <text x="260" y="194" font-size="14" fill="#a9b1d6" font-family="monospace">$ export SECRET_KEY=...</text>
 
   <!-- In-container watchers -->
-  <rect x="50" y="204" width="380" height="56" rx="8" fill="#292e42" stroke="#33384d" stroke-width="1"/>
-  <text x="70" y="224" font-size="11" font-weight="600" fill="#a9b1d6">In-Container Watchers</text>
-  <text x="70" y="248" font-size="11" fill="#565f89">bash env hooks</text>
-  <text x="190" y="248" font-size="11" fill="#565f89">file watcher</text>
-  <text x="295" y="248" font-size="11" fill="#565f89">network poller</text>
+  <rect x="54" y="230" width="432" height="64" rx="10" fill="#292e42" stroke="#33384d" stroke-width="1"/>
+  <text x="78" y="254" font-size="13" font-weight="700" fill="#a9b1d6">In-Container Watchers</text>
+  <text x="78" y="278" font-size="13" fill="#565f89">bash env hooks</text>
+  <text x="228" y="278" font-size="13" fill="#565f89">file watcher (inotify)</text>
+  <text x="400" y="278" font-size="13" fill="#565f89">net poller</text>
 
-  <!-- Vertical connector from container to logs -->
-  <line x1="240" y1="270" x2="240" y2="350" stroke="#33384d" stroke-width="1.5" stroke-dasharray="4 3"/>
-  <text x="248" y="306" font-size="10" fill="#565f89">events</text>
+  <!-- Connector: container to logs -->
+  <line x1="270" y1="310" x2="270" y2="394" stroke="#33384d" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="278" y="356" font-size="11" fill="#565f89">events</text>
 
-  <!-- eBPF observers -->
-  <rect x="470" y="50" width="220" height="280" rx="10" fill="#1f2335" stroke="#7aa2f7" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="490" y="74" font-size="14" font-weight="700" fill="#7aa2f7">Host-Side eBPF</text>
-  <text x="490" y="92" font-size="10" fill="#565f89">observing from outside the container</text>
+  <!-- eBPF observers — bigger -->
+  <rect x="536" y="54" width="310" height="310" rx="12" fill="#1f2335" stroke="#7aa2f7" stroke-width="2" filter="url(#shadow)"/>
+  <text x="562" y="84" font-size="18" font-weight="800" fill="#7aa2f7">Host-Side eBPF</text>
+  <text x="562" y="106" font-size="13" fill="#3d59a1">Observing from outside the container</text>
+  <text x="562" y="124" font-size="13" fill="#3d59a1">at the kernel syscall layer</text>
 
-  <rect x="490" y="108" width="180" height="44" rx="6" fill="#292e42" stroke="#3d59a1" stroke-width="1"/>
-  <text x="505" y="128" font-size="12" font-weight="600" fill="#7aa2f7">exec collector</text>
-  <text x="505" y="144" font-size="10" fill="#3d59a1">every process spawn</text>
+  <!-- exec collector -->
+  <rect x="562" y="140" width="260" height="54" rx="8" fill="#292e42" stroke="#3d59a1" stroke-width="1.5"/>
+  <text x="582" y="164" font-size="15" font-weight="700" fill="#7aa2f7">exec collector</text>
+  <text x="582" y="184" font-size="13" fill="#3d59a1">every process spawn (execve)</text>
 
-  <rect x="490" y="162" width="180" height="44" rx="6" fill="#292e42" stroke="#3d59a1" stroke-width="1"/>
-  <text x="505" y="182" font-size="12" font-weight="600" fill="#7aa2f7">connect collector</text>
-  <text x="505" y="198" font-size="10" fill="#3d59a1">every network call</text>
+  <!-- connect collector -->
+  <rect x="562" y="204" width="260" height="54" rx="8" fill="#292e42" stroke="#3d59a1" stroke-width="1.5"/>
+  <text x="582" y="228" font-size="15" font-weight="700" fill="#7aa2f7">connect collector</text>
+  <text x="582" y="248" font-size="13" fill="#3d59a1">every network call (connect)</text>
 
-  <rect x="490" y="216" width="180" height="44" rx="6" fill="#292e42" stroke="#3d59a1" stroke-width="1"/>
-  <text x="505" y="236" font-size="12" font-weight="600" fill="#7aa2f7">file collector</text>
-  <text x="505" y="252" font-size="10" fill="#3d59a1">credential file access</text>
+  <!-- file collector -->
+  <rect x="562" y="268" width="260" height="54" rx="8" fill="#292e42" stroke="#3d59a1" stroke-width="1.5"/>
+  <text x="582" y="292" font-size="15" font-weight="700" fill="#7aa2f7">file collector</text>
+  <text x="582" y="312" font-size="13" fill="#3d59a1">credential file access (openat)</text>
 
-  <!-- eBPF observe line -->
-  <path d="M 450 180 L 470 180" stroke="#7aa2f7" stroke-width="1.5" stroke-dasharray="4 3"/>
-  <text x="456" y="174" font-size="9" fill="#7aa2f7" transform="rotate(-90, 456, 174)">observes</text>
+  <!-- eBPF observe arrow -->
+  <path d="M 510 200 L 536 200" stroke="#7aa2f7" stroke-width="2" marker-end="url(#bluearrow)"/>
+  <defs>
+    <marker id="bluearrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#7aa2f7"/>
+    </marker>
+  </defs>
+  <text x="480" y="186" font-size="11" font-weight="600" fill="#7aa2f7">observes</text>
 
-  <!-- eBPF to logs connector -->
-  <line x1="580" y1="270" x2="580" y2="350" stroke="#33384d" stroke-width="1.5" stroke-dasharray="4 3"/>
-  <text x="588" y="306" font-size="10" fill="#565f89">events</text>
+  <!-- Connector: eBPF to logs -->
+  <line x1="692" y1="330" x2="692" y2="394" stroke="#33384d" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="700" y="366" font-size="11" fill="#565f89">events</text>
 
   <!-- Session logs -->
-  <rect x="30" y="350" width="660" height="100" rx="10" fill="#1f2335" stroke="#9d7cd8" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="50" y="376" font-size="14" font-weight="700" fill="#bb9af7">Session Logs</text>
-  <text x="170" y="376" font-size="11" fill="#565f89">~/.agentfence/logs/session-&lt;timestamp&gt;/</text>
+  <rect x="30" y="394" width="816" height="110" rx="12" fill="#1f2335" stroke="#9d7cd8" stroke-width="2" filter="url(#shadow)"/>
+  <text x="54" y="424" font-size="18" font-weight="800" fill="#bb9af7">Session Logs</text>
+  <text x="200" y="424" font-size="13" fill="#565f89">~/.agentfence/logs/session-&lt;timestamp&gt;/</text>
 
-  <rect x="50" y="390" width="120" height="30" rx="5" fill="#292e42" stroke="#9d7cd8"/>
-  <text x="63" y="410" font-size="11" font-weight="600" fill="#bb9af7">audit.jsonl</text>
+  <rect x="54" y="440" width="140" height="34" rx="6" fill="#292e42" stroke="#9d7cd8"/>
+  <text x="72" y="462" font-size="14" font-weight="700" fill="#bb9af7">audit.jsonl</text>
 
-  <rect x="180" y="390" width="130" height="30" rx="5" fill="#292e42" stroke="#9d7cd8"/>
-  <text x="193" y="410" font-size="11" font-weight="600" fill="#bb9af7">registry.json</text>
+  <rect x="208" y="440" width="150" height="34" rx="6" fill="#292e42" stroke="#9d7cd8"/>
+  <text x="226" y="462" font-size="14" font-weight="700" fill="#bb9af7">registry.json</text>
 
-  <rect x="320" y="390" width="130" height="30" rx="5" fill="#292e42" stroke="#9d7cd8"/>
-  <text x="333" y="410" font-size="11" font-weight="600" fill="#bb9af7">ebpf_*.jsonl</text>
+  <rect x="372" y="440" width="160" height="34" rx="6" fill="#292e42" stroke="#9d7cd8"/>
+  <text x="390" y="462" font-size="14" font-weight="700" fill="#bb9af7">ebpf_*.jsonl</text>
 
-  <rect x="460" y="390" width="130" height="30" rx="5" fill="#292e42" stroke="#9d7cd8"/>
-  <text x="473" y="410" font-size="11" font-weight="600" fill="#bb9af7">findings.jsonl</text>
+  <rect x="546" y="440" width="160" height="34" rx="6" fill="#292e42" stroke="#9d7cd8"/>
+  <text x="564" y="462" font-size="14" font-weight="700" fill="#bb9af7">findings.jsonl</text>
 
-  <text x="50" y="442" font-size="11" fill="#565f89">credential values never logged  |  env var previews redacted to 4 chars + length</text>
+  <text x="54" y="496" font-size="13" fill="#565f89">Credential values are never logged. Env var previews redacted to 4 chars + length.</text>
 
   <!-- Audit report -->
-  <rect x="170" y="468" width="380" height="34" rx="8" fill="#9d7cd8" filter="url(#shadow)"/>
-  <text x="210" y="490" font-size="13" font-weight="700" fill="#1a1b26">agentfence audit</text>
-  <text x="340" y="490" font-size="12" fill="#1f2335">session report</text>
+  <rect x="220" y="528" width="440" height="42" rx="10" fill="#9d7cd8" filter="url(#shadow)"/>
+  <text x="270" y="555" font-size="17" font-weight="800" fill="#1a1b26">agentfence audit</text>
+  <text x="430" y="555" font-size="15" fill="#292e42">session report</text>
 
-  <!-- Arrow from logs to audit -->
-  <path d="M 360 450 L 360 468" stroke="#bb9af7" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <!-- Arrow: logs to audit -->
+  <path d="M 440 504 L 440 528" stroke="#bb9af7" stroke-width="2.5" marker-end="url(#purplearrow)"/>
   <defs>
-    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+    <marker id="purplearrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#bb9af7"/>
     </marker>
   </defs>
