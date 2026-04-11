@@ -1,8 +1,11 @@
 #!/usr/bin/env sh
-# AgentFence installer
+# AgentFence installer / uninstaller
 #
-# Usage:
+# Install:
 #   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh
+#
+# Uninstall:
+#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh -s -- --uninstall
 #
 # Environment variables:
 #   AGENTFENCE_VERSION   Specific tag to install (default: latest)
@@ -17,6 +20,48 @@ VERSION="${AGENTFENCE_VERSION:-latest}"
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
+
+# ── Uninstall ──────────────────────────────────────────────────────
+if [ "${1:-}" = "--uninstall" ]; then
+  info "uninstalling AgentFence"
+
+  # Remove binary
+  for dir in /usr/local/bin "$HOME/.local/bin"; do
+    if [ -f "$dir/agentfence" ]; then
+      info "removing $dir/agentfence"
+      rm -f "$dir/agentfence" 2>/dev/null || sudo rm -f "$dir/agentfence"
+    fi
+  done
+
+  # Remove Docker images
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    for image in agentfence:dev agentfence-collector:dev; do
+      if docker image inspect "$image" >/dev/null 2>&1; then
+        info "removing Docker image $image"
+        docker rmi "$image" 2>/dev/null || true
+      fi
+    done
+  fi
+
+  # Remove data directory (session logs, host scans, runtime auth, collector images)
+  if [ -d "$HOME/.agentfence" ]; then
+    printf '==> Remove session data at %s? (y/N): ' "$HOME/.agentfence"
+    read -r answer </dev/tty 2>/dev/null || answer="n"
+    case "$answer" in
+      [yY]|[yY][eE][sS])
+        info "removing $HOME/.agentfence"
+        rm -rf "$HOME/.agentfence"
+        ;;
+      *)
+        info "keeping $HOME/.agentfence"
+        ;;
+    esac
+  fi
+
+  info "AgentFence uninstalled."
+  exit 0
+fi
+# ── End uninstall ──────────────────────────────────────────────────
 
 need() { command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"; }
 need curl

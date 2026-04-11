@@ -54,6 +54,14 @@ That's it. The script auto-detects your OS and architecture, downloads the right
 
 > **Building from source:** `cargo install --path . && agentfence build-image` (requires Rust >= 1.85). Only needed if you're contributing or want to modify the container image.
 
+### Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh -s -- --uninstall
+```
+
+Removes the binary, Docker images, and optionally `~/.agentfence/` (prompts before deleting session data).
+
 ## Usage
 
 ```bash
