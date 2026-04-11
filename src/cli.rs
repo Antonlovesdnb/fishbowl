@@ -54,8 +54,13 @@ struct RunArgs {
     #[arg(long, value_enum)]
     network: Option<NetworkMode>,
 
-    /// Monitoring level. `auto` prefers strong monitoring when available and falls back clearly when it is not.
-    #[arg(long, value_enum)]
+    /// Monitoring level. Defaults to auto, which uses the strongest available
+    /// monitoring for the current OS and falls back clearly when it is not
+    /// available. Hidden because the default behavior is correct for almost
+    /// all users; `--monitor basic` skips the helper container for faster
+    /// startup, `--monitor strong` hard-errors if strong monitoring is
+    /// unavailable (useful for CI).
+    #[arg(long, value_enum, hide = true)]
     monitor: Option<MonitorMode>,
 
     /// Docker image tag to run.

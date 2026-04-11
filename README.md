@@ -29,12 +29,18 @@ AgentFence has two separate roles:
 
 The current in-container watchers are useful session telemetry, but they are not the long-term source of truth for comprehensive credential coverage. `agentfence run` now chooses monitoring automatically by default and clearly reports when strong host monitoring is unavailable.
 
-## Platform Support
+## Platform Support & Monitoring
 
-- **Linux host**: full feature set, including host-side eBPF exec, network, and file collectors via a privileged sudo helper.
-- **macOS host**: strong monitoring runs through a "Docker-in-VM helper" backend that launches the eBPF collectors as a privileged sidecar container inside the local Docker VM. The same code path works with **Docker Desktop**, **Colima**, **OrbStack**, and **Rancher Desktop** — the provider is auto-detected from `docker context inspect` and reported in the startup notice. **The collector image is built locally by `agentfence build-image` and currently requires a source-tree install** (`cargo install --path .` rather than the prebuilt binary), because the collector image's Docker build context is the project source tree. Prebuilt-binary installs print a `Skipping collector image build` notice and effectively only get `--monitor basic` on macOS.
-- `--monitor auto` (the default) is lenient on macOS: if the helper container fails to start or crashes during startup, AgentFence prints the helper logs to stderr and continues with container-local telemetry. `--monitor strong` is strict and hard-errors if the helper can't run.
-- **Container images are platform-specific.** When cloning the repo to a host with a different CPU architecture (e.g. Linux x86_64 → macOS aarch64), run `agentfence build-image` again on the new host before `agentfence run`. The build command prints the host architecture so you can see what was built.
+AgentFence automatically picks the strongest monitoring available for your OS — no flag needed.
+
+| Platform | What happens | Requires |
+|---|---|---|
+| **Linux host** | Host-side eBPF exec, network, and file collectors via a privileged `sudo` helper. Scoped to the container's cgroup. | Root access for `bpftrace` |
+| **macOS host** (source install) | eBPF collectors run as a privileged sidecar container inside the Docker VM. Auto-detects Docker Desktop, Colima, OrbStack, and Rancher Desktop. | `agentfence build-image` (builds both the agent and collector images) |
+| **macOS host** (prebuilt binary) | Container-local telemetry only. The collector image can't be built without the source tree; a `Skipping collector image build` notice is printed. | Docker runtime only |
+| **Any host, fallback** | If the host eBPF helper or Docker VM sidecar fails to start, AgentFence prints the reason and continues with container-local telemetry (bash env hooks, inotify file watchers, `ss` network polling). | Docker runtime only |
+
+**Container images are platform-specific.** When cloning the repo to a host with a different CPU architecture (e.g. Linux x86_64 → macOS aarch64), run `agentfence build-image` again on the new host before `agentfence run`.
 
 ## Install
 
