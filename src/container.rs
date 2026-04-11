@@ -2078,6 +2078,10 @@ fn merge_registry_access_counts(main: &mut Value, watcher: &Value) {
     }
 }
 
+/// Relocates host_scan.json out of the container-visible logs directory.
+/// Fail-closed: the source file is ALWAYS deleted from logs_dir, even if
+/// the copy to the host-only location fails. Leaving it behind would let
+/// the agent read the host's credential path inventory.
 fn relocate_host_scan_report(logs_dir: &Path) {
     let src = logs_dir.join("host_scan.json");
     if !src.exists() {
@@ -2089,26 +2093,38 @@ fn relocate_host_scan_report(logs_dir: &Path) {
         .and_then(|n| n.to_str())
         .unwrap_or("unknown-session");
 
-    let host_scans_dir = match agentfence_data_root() {
-        Ok(root) => root.join("host-scans"),
-        Err(_) => {
-            // Can't determine host-scans dir; just delete the file.
-            let _ = fs::remove_file(&src);
-            return;
+    // Try to save a copy to the host-only location for manual review.
+    let saved = (|| -> bool {
+        let host_scans_dir = agentfence_data_root().ok().map(|r| r.join("host-scans"));
+        let Some(host_scans_dir) = host_scans_dir else {
+            return false;
+        };
+        if fs::create_dir_all(&host_scans_dir).is_err() {
+            return false;
         }
-    };
-
-    if fs::create_dir_all(&host_scans_dir).is_ok() {
         let dst = host_scans_dir.join(format!("{session_name}.json"));
-        if fs::rename(&src, &dst).is_err() {
-            // rename fails across filesystems; fall back to copy + delete
-            if fs::copy(&src, &dst).is_ok() {
-                let _ = fs::remove_file(&src);
-            }
+        if fs::rename(&src, &dst).is_ok() {
+            return true; // rename succeeded, source is gone
         }
-    } else {
-        // Can't create host-scans dir; just delete the file.
-        let _ = fs::remove_file(&src);
+        // rename fails across filesystems; copy then delete below
+        fs::copy(&src, &dst).is_ok()
+    })();
+
+    // Always delete from the container-visible directory. If the copy
+    // failed, the host scan data is lost for this session — that's
+    // preferable to leaking it to the agent.
+    if src.exists() {
+        if fs::remove_file(&src).is_err() {
+            eprintln!(
+                "[AgentFence] WARNING: failed to remove host_scan.json from container-visible logs dir"
+            );
+        }
+    }
+
+    if !saved {
+        eprintln!(
+            "[AgentFence] WARNING: could not save host scan report to host-only location; data lost for this session"
+        );
     }
 }
 
