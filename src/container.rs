@@ -1848,14 +1848,90 @@ fn merge_watcher_output(logs_dir: &Path) {
         }
     }
 
-    // The watcher registry may have access_count updates and new credential
-    // discoveries from the in-container watchers. Overwrite the main registry
-    // with the watcher's version since it's a superset (seeded from the host
-    // copy at container start, then updated by watchers during the session).
+    // Merge the watcher registry with the main registry. The main registry
+    // may have been updated by the eBPF collector (access counts from the
+    // host-side file collector), and the watcher registry may have been
+    // updated by the in-container watchers. Take the higher access_count
+    // for each credential to avoid either side clobbering the other.
     let watcher_registry = watcher_dir.join("registry.json");
-    if watcher_registry.is_file() {
-        let main_registry = logs_dir.join("registry.json");
-        let _ = fs::copy(&watcher_registry, &main_registry);
+    let main_registry = logs_dir.join("registry.json");
+    if watcher_registry.is_file() && main_registry.is_file() {
+        if let (Ok(main_content), Ok(watcher_content)) = (
+            fs::read_to_string(&main_registry),
+            fs::read_to_string(&watcher_registry),
+        ) {
+            if let (Ok(mut main_json), Ok(watcher_json)) = (
+                serde_json::from_str::<Value>(&main_content),
+                serde_json::from_str::<Value>(&watcher_content),
+            ) {
+                merge_registry_access_counts(&mut main_json, &watcher_json);
+                if let Ok(merged) = serde_json::to_string_pretty(&main_json) {
+                    let _ = fs::write(&main_registry, format!("{merged}\n"));
+                }
+            }
+        }
+    }
+}
+
+/// Merges access_count values from the watcher registry into the main registry,
+/// keeping the higher count for each credential. This handles the case where
+/// the eBPF collector updated access_count in the main registry while the
+/// in-container watchers updated access_count in the watcher copy.
+fn merge_registry_access_counts(main: &mut Value, watcher: &Value) {
+    let Some(main_creds) = main
+        .get_mut("credentials")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let Some(watcher_creds) = watcher
+        .get("credentials")
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+
+    for main_cred in main_creds.iter_mut() {
+        let Some(main_id) = main_cred.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let main_count = main_cred
+            .get("access_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+
+        for watcher_cred in watcher_creds {
+            if watcher_cred.get("id").and_then(Value::as_str) == Some(main_id) {
+                let watcher_count = watcher_cred
+                    .get("access_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                if watcher_count > main_count {
+                    main_cred["access_count"] = Value::from(watcher_count);
+                }
+                // Also take last_accessed_at if watcher has one and main doesn't
+                if main_cred.get("last_accessed_at").and_then(Value::as_str).is_none() {
+                    if let Some(ts) = watcher_cred.get("last_accessed_at") {
+                        main_cred["last_accessed_at"] = ts.clone();
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // Add any credentials that exist in the watcher but not in main
+    // (discovered by in-container watchers during the session).
+    for watcher_cred in watcher_creds {
+        let Some(watcher_id) = watcher_cred.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let exists_in_main = main_creds
+            .iter()
+            .any(|c| c.get("id").and_then(Value::as_str) == Some(watcher_id));
+        if !exists_in_main {
+            main_creds.push(watcher_cred.clone());
+        }
     }
 }
 
