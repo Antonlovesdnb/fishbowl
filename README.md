@@ -1,39 +1,40 @@
 # AgentFence
 
 ```
-                    ╔═══════════════════════════════════════════════╗
-                    ║            YOUR DEV MACHINE                  ║
-                    ║                                              ║
-   ~/.aws/creds ──> ║   ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐    ║
-   ~/.ssh/keys ──>  ║   │  A G E N T F E N C E               │    ║
-   .env files ──>   ║   │ ┌─────────────────────────────────┐ │    ║
-                    ║   │ │                                 │ │    ║
-                    ║   │ │   AI Agent (Codex/Claude Code)  │ │    ║
-                    ║   │ │                                 │ │    ║
-                    ║   │ │   $ npm install                 │ │    ║
-                    ║   │ │   $ curl api.example.com        │ │    ║
-                    ║   │ │   $ cat .env                    │ │    ║
-                    ║   │ │                                 │ │    ║
-                    ║   │ └─────────────┬───────────────────┘ │    ║
-                    ║   │               │                     │    ║
-                    ║   │  audit.jsonl <─┤─> registry.json    │    ║
-                    ║   │  exec events  │   file events       │    ║
-                    ║   │  net connects │   env mutations      │    ║
-                    ║   │               │                     │    ║
-                    ║   └ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ┘    ║
-                    ║                   │                          ║
-                    ║     eBPF ◄────────┘  (host-side observers)  ║
-                    ║     bpftrace          watching from outside  ║
-                    ║                       the container          ║
-                    ╚═══════════════════════════════════════════════╝
+            ╔═══════════════════════════════���══════════════════════╗
+            ║                  YOUR DEV MACHINE                   ║
+            ║                                                     ║
+            ║  ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐  ║
+            ║  │  A G E N T F E N C E                          │  ║
+            ║  │                                                │  ║
+            ║  │  ┌──────────────────────────────────────────┐  │  ║
+            ║  │  │                                          │  │  ║
+            ║  │  │    AI Agent  (Codex / Claude Code)       │  │  ║
+            ║  │  │                                          │  │  ║
+            ║  │  │    $ npm install                         │  │  ║
+            ║  │  │    $ curl api.example.com                │  │  ║
+            ║  │  │    $ cat .env                            │  │  ║
+            ║  │  │                                          │  │  ║
+            ║  │  └───────────────────┬──────────────────────┘  │  ║
+            ║  │                      │                         │  ║
+            ║  │   audit.jsonl  <─────┼────>  registry.json     │  ║
+            ║  │   exec events        │       file events       │  ║
+            ║  │   net connects       │       env mutations     │  ║
+            ║  │                      │                         │  ║
+            ║  └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘  ║
+            ║                         │                           ║
+            ║    eBPF  <──────────────┘   host-side observers    ║
+            ║    bpftrace                 watching from outside   ║
+            ║                             the container           ║
+            ╚══════════════════════════════════════════════════════╝
 
-              agentfence audit  →  session report with every credential
-                                   access, env mutation, and network call
+         agentfence audit  -->  session report with every credential
+                                access, env mutation, and network call
 ```
 
 A containerized credential auditing perimeter for AI coding agents. Validated end-to-end with **Codex** and **Claude Code** on both macOS and Linux.
 
-AgentFence wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only at runtime — no blocking, no process kills. The only "enforcement" is the static container boundary itself (`--cap-drop ALL`, namespaces, `--security-opt no-new-privileges`).
+AgentFence wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only — it doesn't block or kill anything the agent does. The container itself is the security boundary: all Linux capabilities are dropped, privilege escalation is disabled, and the agent can only see the project directory, selected credentials, and session logs that you choose to mount in.
 
 ## How it works
 
