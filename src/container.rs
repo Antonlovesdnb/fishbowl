@@ -425,16 +425,26 @@ pub fn run_container(options: RunOptions) -> Result<()> {
 
     // Pass credential env vars via a temporary --env-file instead of --env
     // CLI args. Docker --env NAME=VALUE exposes the full secret in the host's
-    // process table (ps aux, /proc/PID/cmdline). The env-file is created with
-    // 0600 permissions and deleted after the container starts.
+    // process table (ps aux, /proc/PID/cmdline). The env-file is written to
+    // a host-only path (NOT inside logs_dir, which is bind-mounted into the
+    // container and would make the secrets readable by the agent).
     let env_file = if !env_vars.is_empty() {
-        let env_file_path = logs_dir.join(".env-pass");
+        let env_file_dir = agentfence_data_root()?.join("tmp");
+        fs::create_dir_all(&env_file_dir)
+            .with_context(|| format!("failed to create {}", env_file_dir.display()))?;
+        #[cfg(unix)]
+        fs::set_permissions(&env_file_dir, fs::Permissions::from_mode(0o700))?;
+        let env_file_path = env_file_dir.join(format!(
+            "env-pass-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
         let mut env_content = String::new();
         for name in &env_vars {
             let value = env::var(name)
                 .with_context(|| format!("environment variable `{name}` is not set on the host"))?;
-            // Docker env-file format: NAME=VALUE, one per line.
-            // Values with newlines are not supported; skip them with a warning.
             if value.contains('\n') {
                 eprintln!("[AgentFence] WARNING: skipping env var {name} (value contains newlines, not supported by --env-file)");
                 continue;
@@ -444,8 +454,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         fs::write(&env_file_path, &env_content)
             .with_context(|| format!("failed to write env-file {}", env_file_path.display()))?;
         #[cfg(unix)]
-        fs::set_permissions(&env_file_path, fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("failed to set permissions on {}", env_file_path.display()))?;
+        fs::set_permissions(&env_file_path, fs::Permissions::from_mode(0o600))?;
         command.arg("--env-file").arg(&env_file_path);
         Some(env_file_path)
     } else {
@@ -529,31 +538,34 @@ pub fn run_container(options: RunOptions) -> Result<()> {
                 logs_dir.join("ebpf_file.jsonl").display()
             );
         }
-        let status = run_with_monitoring(
+        let result = run_with_monitoring(
             monitoring_plan,
             command,
             &options.image,
             &container_name,
             &logs_dir,
-        )?;
+        );
+        // Clean up env-file before propagating errors — secrets must not linger.
         if let Some(ref path) = env_file {
             let _ = fs::remove_file(path);
         }
+        let status = result?;
         merge_watcher_output(&logs_dir);
         return finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status);
     }
 
-    let status = run_with_monitoring(
+    let result = run_with_monitoring(
         monitoring_plan,
         command,
         &options.image,
         &container_name,
         &logs_dir,
-    )?;
-
+    );
+    // Clean up env-file before propagating errors — secrets must not linger.
     if let Some(ref path) = env_file {
         let _ = fs::remove_file(path);
     }
+    let status = result?;
     merge_watcher_output(&logs_dir);
     finalize_and_cleanup_session(selected_agent, &project_dir, &runtime_auth_dir, status)
 }
