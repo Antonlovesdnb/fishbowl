@@ -3,7 +3,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/architecture-light.svg">
-  <img alt="AgentFence architecture" src="docs/architecture-light.svg" width="880">
+  <img alt="AgentFence architecture" src="docs/architecture-light.svg" width="1040">
 </picture>
 
 A containerized credential auditing perimeter for AI coding agents. Validated end-to-end with **Codex** and **Claude Code** on both macOS and Linux.
