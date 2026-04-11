@@ -58,9 +58,9 @@ The container is the security boundary. The agent can see your project directory
 
 When you run `agentfence run ~/my-project`, this is what happens:
 
-1. **Host credential scan.** AgentFence walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.agentfence/host-scans/`) — it is NOT visible inside the container.
+1. **Host credential scan.** AgentFence walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.agentfence/host-scans/`) — it is NOT visible inside the container. See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
 
-2. **Agent auto-detection.** Based on which auth artifacts exist on the host (e.g. `~/.codex/` or `~/.claude/`), AgentFence picks the agent type and auto-mounts the relevant auth files into `/agentfence/home/` inside the container. You can override with `--agent codex` or `--agent claude-code` (hidden flag).
+2. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, AgentFence picks the agent type and auto-mounts the relevant auth files into `/agentfence/home/` inside the container. See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets.
 
 3. **Registry seeding.** Credential paths from the host scan are translated to their in-container equivalents and written to the runtime credential registry (`registry.json`). This is how the file collector knows which `openat()` events are interesting.
 
@@ -73,9 +73,8 @@ When you run `agentfence run ~/my-project`, this is what happens:
 
 5. **Monitoring starts.** AgentFence picks the strongest monitoring available:
    - **Linux:** host-side bpftrace via a `sudo` helper, scoped to the container's cgroup
-   - **macOS (source install):** bpftrace in a privileged sidecar container inside the Docker VM (auto-detects Docker Desktop, Colima, OrbStack, Rancher Desktop)
-   - **macOS (prebuilt binary):** container-local watchers only (the collector image can't be built without the source tree)
-   - **Fallback:** if the strong path fails, prints the reason and continues with container-local telemetry (bash env hooks, inotify file watchers, `ss` network polling)
+   - **macOS:** bpftrace in a privileged sidecar container inside the Docker VM (auto-detects Docker Desktop, Colima, OrbStack, Rancher Desktop)
+   - **Fallback:** if the strong path fails (no root, Docker not running, collector image missing), prints the reason and continues with container-local telemetry (bash env hooks, inotify file watchers, `ss` network polling)
 
 6. **Agent runs.** Your agent does its work inside the container. Every `execve()`, `connect()`, and `openat()` on a monitored credential is captured.
 
@@ -220,9 +219,9 @@ Credential values are **never logged**. Environment variable previews are redact
 
 | Platform | Monitoring | Notes |
 |---|---|---|
-| **Linux** (source or binary) | Host-side eBPF via `sudo` helper | Full exec/connect/file coverage, cgroup-scoped |
-| **macOS** (source install) | eBPF sidecar in Docker VM | Same coverage; auto-detects Docker Desktop/Colima/OrbStack/Rancher |
-| **macOS** (prebuilt binary) | Container-local watchers only | Bash env hooks, inotify, `ss` polling. Collector image needs source tree to build. |
+| **Linux** (source or binary) | Host-side eBPF via `sudo` helper | Full exec/connect/file coverage, cgroup-scoped. No collector image needed — bpftrace runs as the host binary. |
+| **macOS** (source or binary) | eBPF sidecar in Docker VM | Same coverage. The collector image is included in the release and loaded by `install.sh`. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
+| **Any host, fallback** | Container-local watchers | If the eBPF path fails (no root on Linux, Docker not running, etc.), AgentFence falls back to bash env hooks, inotify file watchers, and `ss` network polling. |
 
 **Container images are platform-specific.** After cloning to a different architecture, run `agentfence build-image` before `agentfence run`.
 
@@ -232,7 +231,7 @@ Credential values are **never logged**. Environment variable previews are redact
 
 - **Container-local watchers have coverage gaps.** Bash env hooks don't fire for `sh`/`dash`/`python`/`node` (finding S7). The `ss` network poller runs every 50ms, so sub-50ms connections evade it (S6). UDP/DNS isn't covered by `ss` (S5). These gaps are why the host-side eBPF path exists — it covers all of them.
 
-- **Prebuilt binaries can't build the collector image.** On macOS, this means prebuilt installs only get container-local telemetry. Publishing the collector image to a container registry (so prebuilt installs can `docker pull` it) is a planned improvement.
+- **Private repo collector image download.** The install script downloads the collector image from GitHub releases. For private repos this requires authentication — if the download fails, strong monitoring on macOS won't be available until you download the collector tarball manually (or install from source).
 
 - **Tested agents.** Only Codex and Claude Code have been validated end-to-end. Cursor, Windsurf, and Copilot have scaffolded enum variants in the code but the wrapped-session flow hasn't been exercised for them.
 

@@ -118,6 +118,31 @@ case ":$PATH:" in
     export PATH=\"${BIN_DIR}:\$PATH\"" ;;
 esac
 
+# Download the collector image for strong monitoring on macOS.
+# On Linux, bpftrace runs on the host kernel directly and doesn't need this.
+# The collector image runs inside the Docker VM on macOS.
+COLLECTOR_ARCH="$(uname -m)"
+COLLECTOR_ARCHIVE="agentfence-collector-linux-${COLLECTOR_ARCH}.tar.gz"
+COLLECTOR_URL="https://github.com/${REPO}/releases/download/${TAG}/${COLLECTOR_ARCHIVE}"
+COLLECTOR_DIR="$HOME/.agentfence/collector-images"
+
+info "downloading collector image for strong monitoring"
+mkdir -p "${COLLECTOR_DIR}"
+if curl -fsSL "${COLLECTOR_URL}" -o "${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}" 2>/dev/null; then
+  info "collector image saved to ${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}"
+  # Pre-load into Docker if the daemon is running
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    info "loading collector image into Docker"
+    if docker load --input "${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}" >/dev/null 2>&1; then
+      info "collector image loaded — strong monitoring available"
+    else
+      warn "docker load failed; agentfence build-image will retry on first run"
+    fi
+  fi
+else
+  warn "could not download collector image (private repo or network issue); strong monitoring on macOS will require a source install"
+fi
+
 cat <<EOF
 
 AgentFence ${TAG} installed.

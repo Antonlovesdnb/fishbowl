@@ -134,9 +134,16 @@ pub fn build_image(image: &str) -> Result<()> {
             }
         }
         None => {
-            println!(
-                "[AgentFence] Skipping collector image build: source tree not available (prebuilt binary install). The collector image is only used by --monitor strong; install from source to enable it."
-            );
+            let helper_image = collector_image_tag(image);
+            if docker_image_exists(&helper_image)? {
+                println!("[AgentFence] Collector image already loaded: {helper_image}");
+            } else if load_collector_from_saved_tarball(&helper_image)? {
+                println!("[AgentFence] Loaded collector image from saved tarball.");
+            } else {
+                println!(
+                    "[AgentFence] Collector image not available (prebuilt binary install). Strong monitoring requires the collector image — re-run install.sh or download the collector tarball from the GitHub release."
+                );
+            }
         }
     }
 
@@ -1928,6 +1935,59 @@ fn cleanup_stale_runtime_auth_dirs(max_age: Duration) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Attempts to load the collector image from a pre-saved tarball at
+/// `~/.agentfence/collector-images/agentfence-collector-<arch>.tar.gz`.
+/// The install.sh script downloads this tarball from the GitHub release
+/// alongside the host binary, so prebuilt-binary installs get the
+/// collector image without needing the Rust source tree.
+fn load_collector_from_saved_tarball(target_tag: &str) -> Result<bool> {
+    let data_root = agentfence_data_root()?;
+    let arch = std::env::consts::ARCH;
+    let docker_arch = match arch {
+        "aarch64" => "aarch64",
+        "x86_64" => "x86_64",
+        other => other,
+    };
+    let tarball = data_root
+        .join("collector-images")
+        .join(format!("agentfence-collector-linux-{docker_arch}.tar.gz"));
+
+    if !tarball.is_file() {
+        return Ok(false);
+    }
+
+    println!(
+        "[AgentFence] Loading collector image from {}",
+        tarball.display()
+    );
+    let status = Command::new("docker")
+        .arg("load")
+        .arg("--input")
+        .arg(&tarball)
+        .status()
+        .context("failed to execute `docker load`")?;
+
+    if !status.success() {
+        eprintln!(
+            "[AgentFence] docker load failed for {}",
+            tarball.display()
+        );
+        return Ok(false);
+    }
+
+    // The saved image may have a version-tagged name; re-tag as the expected dev tag
+    let loaded_name = "agentfence-collector:dev";
+    if loaded_name != target_tag {
+        let _ = Command::new("docker")
+            .arg("tag")
+            .arg(loaded_name)
+            .arg(target_tag)
+            .status();
+    }
+
+    Ok(true)
 }
 
 fn agentfence_data_root() -> Result<PathBuf> {

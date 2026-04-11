@@ -80,11 +80,24 @@ jobs:
           rm -rf "dist/${NAME}"
           echo "archive=dist/${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
 
+      - name: Build collector image
+        if: runner.os == 'Linux'
+        id: collector
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCH="$(uname -m)"
+          docker build -f container/Collector.Dockerfile -t agentfence-collector:dev .
+          docker save agentfence-collector:dev | gzip > "dist/agentfence-collector-linux-${ARCH}.tar.gz"
+          echo "collector=dist/agentfence-collector-linux-${ARCH}.tar.gz" >> "$GITHUB_OUTPUT"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: agentfence-${{ matrix.target }}
-          path: ${{ steps.package.outputs.archive }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.collector.outputs.collector }}
           if-no-files-found: error
           retention-days: 7
 
