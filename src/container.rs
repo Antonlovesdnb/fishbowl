@@ -609,28 +609,78 @@ fn finalize_session(
 fn auto_discovered_ssh_mounts(
     report: &crate::discovery::HostScanReport,
 ) -> Result<Vec<PathBuf>> {
-    // No SSH keys are auto-mounted. The previous implementation read all
-    // IdentityFile directives from ~/.ssh/config and mounted any matching
-    // host key — but that's unscoped to the current repo's remote hosts,
-    // so a user with many SSH host entries would expose unrelated private
-    // keys to every AgentFence run. Proper Host-block parsing scoped to
-    // git remotes is complex (wildcards, Match blocks, ProxyJump chains).
-    // The safer default is: print what was found, require --mount.
-    let ssh_keys: Vec<&str> = report
+    let ssh_findings: Vec<&crate::discovery::HostCredentialFinding> = report
         .findings
         .iter()
         .filter(|f| f.mount_kind.as_deref() == Some("ssh"))
-        .filter_map(|f| Path::new(&f.path).file_name().and_then(|n| n.to_str()))
+        .filter(|f| Path::new(&f.path).is_file())
         .collect();
 
-    if !ssh_keys.is_empty() && !report.project_context.git_remote_hosts.is_empty() {
-        println!(
-            "[AgentFence] SSH keys found on host ({}) but not auto-mounted. Use --mount ~/.ssh/<key> to pass them explicitly.",
-            ssh_keys.join(", ")
-        );
+    if ssh_findings.is_empty() || report.project_context.git_remote_hosts.is_empty() {
+        return Ok(Vec::new());
     }
 
-    Ok(Vec::new())
+    // In an interactive terminal, show the discovered keys and let the user
+    // pick which to mount. In non-interactive mode (CI, piped input), print
+    // a recommendation and require explicit --mount.
+    if !io::stdin().is_terminal() {
+        let names: Vec<&str> = ssh_findings
+            .iter()
+            .filter_map(|f| Path::new(&f.path).file_name().and_then(|n| n.to_str()))
+            .collect();
+        println!(
+            "[AgentFence] SSH keys found on host ({}) but not auto-mounted (non-interactive). Use --mount ~/.ssh/<key>.",
+            names.join(", ")
+        );
+        return Ok(Vec::new());
+    }
+
+    let remotes = report
+        .project_context
+        .git_remote_hosts
+        .iter()
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!(
+        "[AgentFence] Project has git remotes: {remotes}"
+    );
+    println!("[AgentFence] SSH keys found on this host:");
+    for (i, finding) in ssh_findings.iter().enumerate() {
+        let name = Path::new(&finding.path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?");
+        println!("  {}) {} ({})", i + 1, name, finding.path);
+    }
+    print!("[AgentFence] Mount which keys? (comma-separated numbers, 'all', or Enter to skip): ");
+    let _ = io::stdout().flush();
+
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        return Ok(Vec::new());
+    }
+    let input = input.trim();
+    if input.is_empty() || input == "0" || input.to_lowercase() == "none" {
+        return Ok(Vec::new());
+    }
+
+    let mut paths = Vec::new();
+    if input.to_lowercase() == "all" {
+        for finding in &ssh_findings {
+            paths.push(PathBuf::from(&finding.path));
+        }
+    } else {
+        for token in input.split(',') {
+            if let Ok(num) = token.trim().parse::<usize>() {
+                if num >= 1 && num <= ssh_findings.len() {
+                    paths.push(PathBuf::from(&ssh_findings[num - 1].path));
+                }
+            }
+        }
+    }
+
+    Ok(paths)
 }
 
 /// Env vars that are safe to auto-pass because they're needed for core agent
