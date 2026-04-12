@@ -3,8 +3,8 @@
 ## Getting started
 
 ```bash
-git clone https://github.com/Antonlovesdnb/Fishbowl.git
-cd Fishbowl
+git clone https://github.com/Antonlovesdnb/fishbowl.git
+cd fishbowl
 
 # Option 1: compile-check without installing Rust (uses Docker)
 docker run --rm -v "$PWD":/src -w /src rust:slim cargo check

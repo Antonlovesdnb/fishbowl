@@ -1,7 +1,7 @@
 # Fishbowl
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/Fishbowl/releases)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/Fishbowl/actions)
+[![Release](https://img.shields.io/badge/release-v2.0.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/releases)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/actions)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -54,10 +54,10 @@ When you run `fishbowl run ~/my-project`, this is what happens:
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/fishbowl/main/install.sh | sh
 ```
 
-That's it. The script auto-detects your OS and architecture, downloads the right binary and the collector image from the latest [GitHub release](https://github.com/Antonlovesdnb/Fishbowl/releases), verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if no write access).
+That's it. The script auto-detects your OS and architecture, downloads the right binary and the collector image from the latest [GitHub release](https://github.com/Antonlovesdnb/fishbowl/releases), verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if no write access).
 
 **Supported platforms:** macOS (Apple Silicon) and Linux (x86_64 + arm64). Linux binaries are fully static (musl libc) so they run on any distro including Alpine.
 
@@ -70,7 +70,7 @@ That's it. The script auto-detects your OS and architecture, downloads the right
 ### Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/fishbowl/main/install.sh | sh -s -- --uninstall
 ```
 
 Removes the binary, Docker images, and optionally `~/.fishbowl/` (prompts before deleting session data).
