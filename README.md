@@ -1,6 +1,6 @@
 # Fishbowl
 
-[![Release](https://img.shields.io/badge/release-v2.0.1-blue?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/releases)
+[![Release](https://img.shields.io/badge/release-v2.1.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/releases)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/actions)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)]()

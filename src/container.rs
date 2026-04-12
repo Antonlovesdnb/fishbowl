@@ -206,11 +206,27 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         }
         None => {
             let detection = agent_runtime::detect_agent(&project_dir, &host_scan);
-            println!(
-                "[Fishbowl] Auto-selected agent: {} ({})",
-                detection.agent, detection.reason
-            );
-            detection.agent
+            if detection.candidates.len() > 1 && io::stdin().is_terminal() {
+                match prompt_agent_choice(&detection.candidates, &detection.reason)? {
+                    Some(chosen) => {
+                        println!("[Fishbowl] Agent selected: {chosen}");
+                        chosen
+                    }
+                    None => {
+                        println!(
+                            "[Fishbowl] Auto-selected agent: {} (no choice made; {})",
+                            detection.agent, detection.reason
+                        );
+                        detection.agent
+                    }
+                }
+            } else {
+                println!(
+                    "[Fishbowl] Auto-selected agent: {} ({})",
+                    detection.agent, detection.reason
+                );
+                detection.agent
+            }
         }
     };
     let auto_ssh_mounts = auto_discovered_ssh_mounts(&host_scan)?;
@@ -616,6 +632,32 @@ fn finalize_session(
     }
 
     Ok(())
+}
+
+fn prompt_agent_choice(candidates: &[Agent], reason: &str) -> Result<Option<Agent>> {
+    println!("[Fishbowl] Ambiguous agent detection: {reason}.");
+    println!("[Fishbowl] Candidate agents for this project:");
+    for (i, agent) in candidates.iter().enumerate() {
+        println!("  {}) {}", i + 1, agent);
+    }
+    print!("[Fishbowl] Pick an agent (number, or Enter to drop to a shell): ");
+    io::stdout().flush().ok();
+
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        return Ok(None);
+    }
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok(None);
+    }
+    match input.parse::<usize>() {
+        Ok(n) if n >= 1 && n <= candidates.len() => Ok(Some(candidates[n - 1])),
+        _ => {
+            println!("[Fishbowl] Unrecognized selection; falling back to shell.");
+            Ok(None)
+        }
+    }
 }
 
 fn auto_discovered_ssh_mounts(

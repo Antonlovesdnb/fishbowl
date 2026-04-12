@@ -7,8 +7,13 @@ use crate::{
 };
 
 pub struct AgentDetection {
+    /// The single-agent guess. On ambiguity this is `Shell` as a safe default,
+    /// and `candidates` holds the agents the caller should choose between.
     pub agent: Agent,
     pub reason: String,
+    /// Populated when the signal is genuinely ambiguous and an interactive
+    /// caller should prompt. Empty on a clean single-agent detection.
+    pub candidates: Vec<Agent>,
 }
 
 pub fn detect_agent(project_dir: &Path, report: &HostScanReport) -> AgentDetection {
@@ -21,9 +26,11 @@ pub fn detect_agent(project_dir: &Path, report: &HostScanReport) -> AgentDetecti
         return detected(Agent::Codex, "project has Codex marker (AGENTS.md or .codex/)");
     }
     if claude_marker && codex_marker {
-        return detected(
-            Agent::Shell,
-            "project has both Claude and Codex markers; falling back to shell to avoid guessing",
+        // Strong project-level signal for both agents — let an interactive
+        // caller pick. Non-interactive callers get the previous Shell fallback.
+        return ambiguous(
+            vec![Agent::ClaudeCode, Agent::Codex],
+            "project has both Claude and Codex markers",
         );
     }
     if host_has_codex_project_session(project_dir) && !claude_marker {
@@ -67,6 +74,15 @@ fn detected(agent: Agent, reason: &str) -> AgentDetection {
     AgentDetection {
         agent,
         reason: reason.to_string(),
+        candidates: Vec::new(),
+    }
+}
+
+fn ambiguous(candidates: Vec<Agent>, reason: &str) -> AgentDetection {
+    AgentDetection {
+        agent: Agent::Shell,
+        reason: reason.to_string(),
+        candidates,
     }
 }
 
