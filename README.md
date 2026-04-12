@@ -1,5 +1,12 @@
 # AgentFence
 
+[![Release](https://img.shields.io/github/v/release/Antonlovesdnb/AgentFence?style=flat-square&color=blue)](https://github.com/Antonlovesdnb/AgentFence/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/Antonlovesdnb/AgentFence/release.yml?style=flat-square&label=build)](https://github.com/Antonlovesdnb/AgentFence/actions)
+[![Rust](https://img.shields.io/badge/rust-2024_edition-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
+[![License](https://img.shields.io/github/license/Antonlovesdnb/AgentFence?style=flat-square)](LICENSE)
+[![AI Agents](https://img.shields.io/badge/AI%20Agents-Friendly-blueviolet?style=flat-square)](AGENTS.md)
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/architecture-light.svg">
