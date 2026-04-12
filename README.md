@@ -31,25 +31,29 @@ When you run `fishbowl run ~/my-project`, this is what happens:
 
 1. **Host credential scan.** Fishbowl walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.fishbowl/host-scans/`) — it is NOT visible inside the container. See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
 
-2. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container. See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
+![image-20260412101202171](C:\Users\aovru\Documents\GitHub\fishbowl\img\image-20260412101202171.png)
 
-3. **Registry seeding.** Credential paths from the host scan are translated to their in-container equivalents and written to the runtime credential registry (`registry.json`). This is how the file collector knows which `openat()` events are interesting.
+1. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container. See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
 
-4. **Container launch.** Docker runs the agent inside a hardened container:
+![image-20260412101548199](C:\Users\aovru\Documents\GitHub\fishbowl\img\image-20260412101548199.png)
+
+1. **Registry seeding.** Credential paths from the host scan are translated to their in-container equivalents and written to the runtime credential registry (`registry.json`). This is how the file collector knows which `openat()` events are interesting.
+
+2. **Container launch.** Docker runs the agent inside a hardened container:
    - `--cap-drop ALL --security-opt no-new-privileges`
    - Project bind-mounted at `/<project-name>` and `/workspace`
    - Selected credentials at `/fishbowl/creds/` and `/fishbowl/ssh/` (read-only)
    - Agent auth at `/fishbowl/home/` (the container's `$HOME`)
    - Session logs at `/var/log/fishbowl/`
 
-5. **Monitoring starts.** Fishbowl picks the strongest monitoring available:
+3. **Monitoring starts.** Fishbowl picks the strongest monitoring available:
    - **Linux:** host-side bpftrace via a `sudo` helper, scoped to the container's cgroup
    - **macOS:** bpftrace in a privileged sidecar container inside the Docker VM (auto-detects Docker Desktop, Colima, OrbStack, Rancher Desktop)
    - **Fallback:** if the strong path fails (no root, Docker not running, collector image missing), prints the reason and continues with container-local telemetry (bash env hooks, inotify file watchers, `ss` network polling)
 
-6. **Agent runs.** Your agent does its work inside the container. Every `execve()`, `connect()`, and `openat()` on a monitored credential is captured.
+4. **Agent runs.** Your agent does its work inside the container. Every `execve()`, `connect()`, and `openat()` on a monitored credential is captured.
 
-7. **Shutdown.** When the agent exits, Fishbowl gracefully drains the bpftrace collectors (SIGINT + 1.5s grace period) and tears down the helper container. Session state is synced back to the host for Codex/Claude.
+5. **Shutdown.** When the agent exits, Fishbowl gracefully drains the bpftrace collectors (SIGINT + 1.5s grace period) and tears down the helper container. Session state is synced back to the host for Codex/Claude.
 
 ## Install
 
