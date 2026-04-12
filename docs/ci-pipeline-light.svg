@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 320" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <filter id="shadow">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.1"/>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#868e96"/>
+    </marker>
+    <marker id="greenarrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#2e7d32"/>
+    </marker>
+    <marker id="redarrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#c92a2a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1100" height="320" rx="12" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+
+  <text x="550" y="34" font-size="20" font-weight="800" fill="#495057" text-anchor="middle">CI/CD Pipeline with AgentFence</text>
+
+  <!-- Step 1: Agent task -->
+  <rect x="30" y="60" width="200" height="100" rx="10" fill="#edf2ff" stroke="#4263eb" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="130" y="92" font-size="16" font-weight="700" fill="#364fc7" text-anchor="middle">Agent Task</text>
+  <text x="130" y="116" font-size="13" fill="#868e96" text-anchor="middle">agentfence run</text>
+  <text x="130" y="136" font-size="13" fill="#868e96" text-anchor="middle">-- codex "deploy"</text>
+
+  <path d="M 230 110 L 262 110" stroke="#868e96" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Step 2: Monitoring -->
+  <rect x="262" y="60" width="200" height="100" rx="10" fill="#fff9db" stroke="#e67700" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="362" y="92" font-size="16" font-weight="700" fill="#e67700" text-anchor="middle">eBPF Monitoring</text>
+  <text x="362" y="116" font-size="13" fill="#868e96" text-anchor="middle">exec / connect / file</text>
+  <text x="362" y="136" font-size="13" fill="#868e96" text-anchor="middle">events captured</text>
+
+  <path d="M 462 110 L 494 110" stroke="#868e96" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Step 3: Check -->
+  <rect x="494" y="60" width="200" height="100" rx="10" fill="#f3f0ff" stroke="#7950f2" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="594" y="92" font-size="16" font-weight="700" fill="#6741d9" text-anchor="middle">Security Check</text>
+  <text x="594" y="116" font-size="13" fill="#868e96" text-anchor="middle">agentfence check</text>
+  <text x="594" y="136" font-size="13" fill="#868e96" text-anchor="middle">--fail-on high</text>
+
+  <!-- Branch: Pass -->
+  <path d="M 694 90 L 740 90" stroke="#2e7d32" stroke-width="2" marker-end="url(#greenarrow)"/>
+  <rect x="740" y="56" width="160" height="68" rx="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="820" y="86" font-size="16" font-weight="700" fill="#2e7d32" text-anchor="middle">PASS</text>
+  <text x="820" y="108" font-size="13" fill="#558b2f" text-anchor="middle">Deploy proceeds</text>
+
+  <!-- Branch: Fail -->
+  <path d="M 694 130 L 740 130" stroke="#c92a2a" stroke-width="2" marker-end="url(#redarrow)"/>
+  <rect x="740" y="96" width="160" height="68" rx="10" fill="#fff5f5" stroke="#c92a2a" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="820" y="126" font-size="16" font-weight="700" fill="#c92a2a" text-anchor="middle">FAIL</text>
+  <text x="820" y="148" font-size="13" fill="#e03131" text-anchor="middle">Pipeline blocked</text>
+
+  <!-- Alert arrow from Fail -->
+  <path d="M 900 130 L 940 130" stroke="#c92a2a" stroke-width="2" marker-end="url(#redarrow)"/>
+  <rect x="940" y="96" width="130" height="68" rx="10" fill="#fff5f5" stroke="#c92a2a" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="1005" y="126" font-size="15" font-weight="700" fill="#c92a2a" text-anchor="middle">Alert</text>
+  <text x="1005" y="148" font-size="12" fill="#e03131" text-anchor="middle">Slack / PagerDuty</text>
+
+  <!-- What it catches -->
+  <text x="30" y="210" font-size="16" font-weight="700" fill="#495057">What agentfence check catches:</text>
+
+  <rect x="30" y="224" width="250" height="36" rx="6" fill="#fff5f5"/>
+  <text x="155" y="248" font-size="13" fill="#c92a2a" text-anchor="middle">curl/wget reading credential files</text>
+
+  <rect x="296" y="224" width="250" height="36" rx="6" fill="#fff5f5"/>
+  <text x="421" y="248" font-size="13" fill="#c92a2a" text-anchor="middle">env var poisoning (PAGER, LD_PRELOAD)</text>
+
+  <rect x="562" y="224" width="250" height="36" rx="6" fill="#fff5f5"/>
+  <text x="687" y="248" font-size="13" fill="#c92a2a" text-anchor="middle">unexpected outbound connections</text>
+
+  <rect x="30" y="272" width="250" height="36" rx="6" fill="#fff5f5"/>
+  <text x="155" y="296" font-size="13" fill="#c92a2a" text-anchor="middle">malicious npm/pip postinstall scripts</text>
+
+  <rect x="296" y="272" width="250" height="36" rx="6" fill="#fff5f5"/>
+  <text x="421" y="296" font-size="13" fill="#c92a2a" text-anchor="middle">MCP config tampering</text>
+
+  <rect x="562" y="272" width="250" height="36" rx="6" fill="#fff5f5"/>
+  <text x="687" y="296" font-size="13" fill="#c92a2a" text-anchor="middle">credential exfiltration via prompt injection</text>
+</svg>

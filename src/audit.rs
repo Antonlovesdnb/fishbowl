@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 
 pub fn run_audit(session_dir: Option<PathBuf>) -> Result<()> {
@@ -17,6 +17,100 @@ pub fn run_audit(session_dir: Option<PathBuf>) -> Result<()> {
 
     print_report(&logs_dir, &events, &registry, &findings);
     Ok(())
+}
+
+pub fn run_check(session_dir: Option<PathBuf>, fail_on: &str) -> Result<()> {
+    let logs_dir = match session_dir {
+        Some(dir) => dir,
+        None => find_latest_session()?,
+    };
+
+    let threshold = match fail_on.to_lowercase().as_str() {
+        "low" => 1,
+        "medium" => 2,
+        "high" => 3,
+        "critical" => 4,
+        other => bail!("unknown severity level: {other}. Use: low, medium, high, critical"),
+    };
+
+    let events = load_events(&logs_dir.join("audit.jsonl"))?;
+    let findings = load_events(&logs_dir.join("findings.jsonl")).unwrap_or_default();
+    let ebpf_exec = load_events(&logs_dir.join("ebpf_exec.jsonl")).unwrap_or_default();
+    let ebpf_file = load_events(&logs_dir.join("ebpf_file.jsonl")).unwrap_or_default();
+    let ebpf_connect = load_events(&logs_dir.join("ebpf_connect.jsonl")).unwrap_or_default();
+
+    let mut counts: [u64; 5] = [0; 5]; // info, low, medium, high, critical
+    let mut flagged: Vec<(String, String, String)> = Vec::new(); // (severity, event, reason)
+
+    // Count audit events by severity
+    for event in events.iter().chain(findings.iter()) {
+        let severity = event.get("severity").and_then(Value::as_str).unwrap_or("info");
+        let level = severity_level(severity);
+        counts[level] += 1;
+        if level >= threshold {
+            let event_type = event.get("event").and_then(Value::as_str).unwrap_or("unknown");
+            let reason = event.get("reason").and_then(Value::as_str).unwrap_or("");
+            flagged.push((severity.to_string(), event_type.to_string(), reason.to_string()));
+        }
+    }
+
+    // Check for suspicious patterns in eBPF data
+    // Credential file accessed by curl/wget/nc = high severity
+    for event in &ebpf_file {
+        let process = event.get("process_name").and_then(Value::as_str).unwrap_or("");
+        let path = event.get("raw_path").and_then(Value::as_str).unwrap_or("");
+        if matches!(process, "curl" | "wget" | "nc" | "ncat" | "socat" | "python3" | "python" | "node") {
+            counts[3] += 1; // high
+            if 3 >= threshold {
+                flagged.push((
+                    "high".to_string(),
+                    "credential_access_by_network_tool".to_string(),
+                    format!("{process} accessed credential file {path}"),
+                ));
+            }
+        }
+    }
+
+    // Config sync-back changes = medium severity (already counted in audit events)
+
+    // Print summary
+    println!("AgentFence Check");
+    println!("Session:  {}", logs_dir.display());
+    println!("Threshold: --fail-on {fail_on}");
+    println!();
+    println!("Events:   {} total ({} info, {} low, {} medium, {} high, {} critical)",
+        counts.iter().sum::<u64>(),
+        counts[0], counts[1], counts[2], counts[3], counts[4],
+    );
+    println!("eBPF:     {} exec, {} file, {} connect",
+        ebpf_exec.len(), ebpf_file.len(), ebpf_connect.len(),
+    );
+    println!();
+
+    if flagged.is_empty() {
+        println!("Result:   PASS (no events at or above {fail_on} severity)");
+        Ok(())
+    } else {
+        println!("Result:   FAIL ({} events at or above {fail_on} severity)", flagged.len());
+        println!();
+        for (severity, event_type, reason) in &flagged {
+            let short_reason = if reason.len() > 80 { &reason[..80] } else { reason };
+            println!("  {:<8}  {}: {}", severity.to_uppercase(), event_type, short_reason);
+        }
+        println!();
+        println!("Full audit log: {}", logs_dir.join("audit.jsonl").display());
+        std::process::exit(1);
+    }
+}
+
+fn severity_level(severity: &str) -> usize {
+    match severity.to_lowercase().as_str() {
+        "low" => 1,
+        "medium" => 2,
+        "high" => 3,
+        "critical" => 4,
+        _ => 0, // info
+    }
 }
 
 fn find_latest_session() -> Result<PathBuf> {

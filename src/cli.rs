@@ -26,6 +26,8 @@ enum Command {
     Run(RunArgs),
     /// Review the audit log from a session.
     Audit(AuditArgs),
+    /// Check session logs against a severity threshold (for CI gating).
+    Check(CheckArgs),
     #[command(hide = true)]
     CollectEbpf(CollectEbpfArgs),
 }
@@ -121,6 +123,17 @@ struct AuditArgs {
     /// Path to a specific session log directory. Defaults to the most recent session.
     #[arg(value_name = "SESSION_DIR")]
     session: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct CheckArgs {
+    /// Path to a specific session log directory. Defaults to the most recent session.
+    #[arg(value_name = "SESSION_DIR")]
+    session: Option<PathBuf>,
+
+    /// Minimum severity to fail on. Exit non-zero if any event at or above this level is found.
+    #[arg(long, default_value = "high", value_name = "LEVEL")]
+    fail_on: String,
 }
 
 #[derive(Debug, Args)]
@@ -220,6 +233,7 @@ pub fn run() -> Result<()> {
     match cli.command {
         Command::BuildImage(args) => build_image(&args.image),
         Command::Audit(args) => audit::run_audit(args.session),
+        Command::Check(args) => audit::run_check(args.session, &args.fail_on),
         Command::Run(args) => {
             let project_dir = &args.project;
             let project_config = if args.no_config {
