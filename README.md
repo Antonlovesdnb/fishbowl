@@ -31,11 +31,11 @@ When you run `fishbowl run ~/my-project`, this is what happens:
 
 1. **Host credential scan.** Fishbowl walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.fishbowl/host-scans/`) — it is NOT visible inside the container. See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
 
-![image-20260412101202171](C:\Users\aovru\Documents\GitHub\fishbowl\img\image-20260412101202171.png)
+![image-20260412101202171](img\image-20260412101202171.png)
 
 1. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container. See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
 
-![image-20260412101548199](C:\Users\aovru\Documents\GitHub\fishbowl\img\image-20260412101548199.png)
+![image-20260412101548199](img\image-20260412101548199.png)
 
 1. **Registry seeding.** Credential paths from the host scan are translated to their in-container equivalents and written to the runtime credential registry (`registry.json`). This is how the file collector knows which `openat()` events are interesting.
 
