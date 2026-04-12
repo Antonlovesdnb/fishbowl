@@ -2,10 +2,10 @@
 # Fishbowl installer / uninstaller
 #
 # Install:
-#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/fishbowl/main/install.sh | sh
 #
 # Uninstall:
-#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/fishbowl/main/install.sh | sh -s -- --uninstall
 #
 # Environment variables:
 #   FISHBOWL_VERSION   Specific tag to install (default: latest)
@@ -14,7 +14,7 @@
 
 set -eu
 
-REPO="Antonlovesdnb/Fishbowl"
+REPO="Antonlovesdnb/fishbowl"
 VERSION="${FISHBOWL_VERSION:-latest}"
 
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
