@@ -111,12 +111,6 @@ struct RunArgs {
     #[arg(long, hide = true)]
     no_config: bool,
 
-    /// Trust and apply mounts from the project's .agentfence.toml. Without
-    /// this flag, config mounts are printed as recommendations but not applied
-    /// — the project repo is untrusted input and could request ~/.ssh/id_rsa.
-    #[arg(long, hide = true)]
-    trust_config: bool,
-
     /// Command to execute inside the container instead of the default shell.
     #[arg(trailing_var_arg = true, value_name = "COMMAND")]
     command: Vec<String>,
@@ -237,25 +231,19 @@ pub fn run() -> Result<()> {
             let (mut ssh_mounts, mut cred_mounts, mut env_vars) =
                 (args.ssh_mounts, args.cred_mounts, args.env_vars);
 
-            // Config file mounts are only applied with --trust-config. The
-            // project repo is untrusted input — a malicious .agentfence.toml
-            // could request mounts like ~/.ssh/id_rsa or ~/.aws/credentials.
-            // Without --trust-config, mounts are printed as recommendations.
+            // Project config mounts are never applied. The project repo is
+            // untrusted input — a malicious .agentfence.toml could request
+            // ~/.ssh/id_rsa or ~/.aws/credentials. Mounts always come from
+            // explicit --mount flags on the CLI.
             if let Some(ref config) = project_config {
                 if !config.mounts.is_empty() {
-                    if args.trust_config {
-                        for entry in &config.mounts {
-                            add_mount(entry, &mut ssh_mounts, &mut cred_mounts, &mut env_vars);
-                        }
-                    } else {
-                        println!(
-                            "[AgentFence] Project config requests mounts: {}",
-                            config.mounts.join(", ")
-                        );
-                        println!(
-                            "[AgentFence] NOT applied (project config is untrusted). Use --trust-config or --mount on the CLI."
-                        );
-                    }
+                    println!(
+                        "[AgentFence] Project config requests mounts: {}",
+                        config.mounts.join(", ")
+                    );
+                    println!(
+                        "[AgentFence] NOT applied (project config is untrusted). Use --mount on the CLI instead."
+                    );
                 }
             }
 

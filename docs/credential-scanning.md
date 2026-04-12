@@ -304,7 +304,7 @@ Nothing from the host enters the container without explicit user action, except 
 
 **Credential env vars** discovered in project text files (e.g., a README that mentions `AWS_SECRET_ACCESS_KEY`) are printed as recommendations but NOT auto-passed. `GH_TOKEN` / `GITHUB_TOKEN` are also NOT auto-passed — use `--mount GH_TOKEN` explicitly.
 
-**`.agentfence.toml` mounts** are printed as recommendations but NOT applied by default. The project repo is untrusted input. Use `--trust-config` to opt in, or use `--mount` on the CLI directly.
+**`.agentfence.toml` mounts** are printed as recommendations but never applied. The project repo is untrusted input. Use `--mount` on the CLI instead.
 
 **`.agentfence.toml` network and monitor** overrides are always ignored. Use CLI flags (`--network`, `--monitor`) to change security posture.
 

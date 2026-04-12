@@ -41,11 +41,11 @@
 
   <!-- Row 4: Config mounts — Trust required -->
   <rect x="30" y="288" width="760" height="52" rx="6" fill="#edf2ff" filter="url(#shadow)"/>
-  <text x="50" y="310" font-size="15" font-weight="600" fill="#364fc7">.agentfence.toml mounts</text>
-  <text x="50" y="330" font-size="12" fill="#5c7cfa">Project config credential requests</text>
-  <text x="460" y="310" font-size="14" fill="#364fc7">Requires --trust-config</text>
-  <rect x="672" y="298" width="108" height="30" rx="6" fill="#4263eb"/>
-  <text x="726" y="318" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">EXPLICIT</text>
+  <text x="50" y="310" font-size="15" font-weight="600" fill="#c92a2a">.agentfence.toml mounts</text>
+  <text x="50" y="330" font-size="12" fill="#e03131">Project config credential requests</text>
+  <text x="460" y="310" font-size="14" fill="#c92a2a">Never applied (use --mount)</text>
+  <rect x="672" y="298" width="108" height="30" rx="6" fill="#c92a2a"/>
+  <text x="726" y="318" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">BLOCKED</text>
 
   <!-- Row 5: Network/monitor — Blocked -->
   <rect x="30" y="352" width="760" height="52" rx="6" fill="#fff5f5" filter="url(#shadow)"/>
