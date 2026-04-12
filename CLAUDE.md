@@ -110,6 +110,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 ## Where to look next
 
 - `docs/DESIGN_SPEC.md` — original design spec (historical, diverges from implementation)
+- `docs/adding-an-agent.md` — contributor checklist for wiring a new AI agent (touch points, drift traps, smoke tests)
 - `README.md` — usage, log format, session review, known limitations
 - `MEMORY.md` — consolidated findings snapshot from review passes + 2026-04-09 runtime validation
 - `.fishbowl.toml` — project-level config; loader at `src/config.rs`
