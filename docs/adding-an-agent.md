@@ -13,7 +13,7 @@ If you're adding an agent because you need it for your own workflow: the steps b
 
 ## The checklist
 
-Each step has a file/line anchor. Many of the functions take exhaustive `match` on `Agent`, so the compiler will catch most missing arms — but **two of the steps below have silent drift traps the compiler can't catch.** Those are flagged.
+Each step has a file/line anchor. Some of the functions take exhaustive `match` on `Agent` (the compiler will force an arm); others use wildcard arms or `if agent == ...` chains and **silently do nothing** for a new variant. Three of the steps below are silent traps where the compiler will not help you — they're flagged with ⚠️. Treat the smoke test (step 11) as the only real safety net.
 
 ### 1. Add the enum variant — `src/container.rs:46`
 
@@ -55,7 +55,7 @@ Two layers:
 - **Project markers** (`has_claude_project_marker`, `has_codex_project_marker` at `agent_runtime.rs:100` and `:104`). Add a `has_youragent_project_marker` checking for whatever file or directory in the project root signals "this project uses your agent."
 - **The `detect_agent` cascade higher in the same file.** Plumb your new marker (and any host-auth check) into the cascade in priority order. Read what Codex and Claude do for the precedence rules — they're not arbitrary.
 
-### 5. Auth materialization — `src/container.rs:914` (Codex) and `:951` (Claude)
+### 5. ⚠️ Auth materialization — `src/container.rs:914` (Codex) and `:951` (Claude)
 
 Write `materialize_youragent_auth_mounts` following one of those two as a template. The function:
 
@@ -64,7 +64,7 @@ Write `materialize_youragent_auth_mounts` following one of those two as a templa
 - If the agent stores per-project state with absolute paths, rewrite the host project path to the container project path while copying (see `copy_codex_project_history` for the pattern).
 - Returns a `Vec<MaterializedMount>` describing what to bind-mount into the container.
 
-Then register your function in `auto_discovered_agent_auth_mounts` (around `container.rs:907`) — the compiler will force you to do this once you add the enum variant.
+Then register your function in `auto_discovered_agent_auth_mounts` at `container.rs:898`. **Silent trap:** the match in that function ends with `_ => Ok(Vec::new())` (line 910), so a new agent variant compiles fine and silently gets zero auth mounts. The compiler will not force you to add an arm here. If you skip this step the agent will launch but won't be authenticated, and you'll waste an hour wondering why. Always add an explicit arm and verify in the smoke test that the expected mounts appear in the `[Fishbowl] Auto-mounting N agent auth artifact(s)` log line.
 
 ### 6. ⚠️ `auto_auth_path_aliases` — `src/container.rs:1925` (silent drift trap)
 
@@ -90,15 +90,17 @@ match agent {
 
 `agent_auth_env_hints` returns the credential env vars Fishbowl will auto-pass through if they're set on the host (e.g., `OPENAI_API_KEY` for Cursor). **Be conservative.** Only list vars that are *actually used by this specific agent for authentication*. Don't list `GITHUB_TOKEN` unless the agent literally needs it; project-discovered env vars are surfaced separately as recommendations, not auto-passed. Project content must never control security posture (see CLAUDE.md "Project content must never control security posture" for the rules).
 
-### 8. Session sync-back — `src/container.rs:1168` (Claude) and `:1389` (Codex)
+### 8. ⚠️ Session sync-back — `src/container.rs:1168` (Claude) and `:1389` (Codex)
 
-If your agent stores session history or per-project state inside the container that the user wants persisted back to the host, write `sync_youragent_session_back` modeled on one of those two. Then add a branch in `finalize_session` (around `container.rs:627`):
+If your agent stores session history or per-project state inside the container that the user wants persisted back to the host, write `sync_youragent_session_back` modeled on one of those two. Then add a branch in `finalize_session` at `container.rs:616`:
 
 ```rust
 if agent == Agent::YourAgent {
     sync_youragent_session_back(project_dir, runtime_auth_dir)?;
 }
 ```
+
+**Silent trap:** `finalize_session` is an `if agent == ...` chain, not a `match`. The compiler will not force you to add a branch. If you skip this step the agent runs cleanly but no state crosses back to the host — the user's history, sessions, and config edits inside the container are discarded on exit. Verify in the smoke test by editing something inside the container and checking that the change is visible on the host after the session ends.
 
 If your agent has no persistent state, skip this step entirely — there's no required hook.
 
@@ -147,6 +149,9 @@ Confirm:
 
 ## When in doubt
 
-Read both `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts` end-to-end before writing your own. They diverge in important ways (Codex copies session JSONL trees with cwd filtering; Claude copies a single config + writes a workspace-trust file). Your agent's auth model probably looks more like one than the other — pick the closer one as your template.
+Read both `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts` end-to-end before writing your own. They both copy multiple auth files, both rewrite per-project state from host paths to container paths, and both run a permission-tightening pass. The interesting differences:
 
-If your agent's auth model doesn't match either pattern, open an issue describing it before writing code. There may be a structural change worth doing first.
+- **Codex** filters its own `history.jsonl` and `sessions/` trees line-by-line, dropping records whose `cwd` field doesn't match the current project. See `copy_codex_project_history` and `copy_codex_project_sessions`. It mounts the whole `~/.codex` runtime directory at `$HOME/.codex`.
+- **Claude** mirrors its per-project session directories under a slug-named subdir via `mirror_claude_project_sessions`, and additionally copies `~/.claude.json` (the agent's global config) to a separate mount target at `$HOME/.claude.json`. It seeds workspace trust into that copy via `seed_workspace_trust` so the in-container Claude doesn't prompt for project trust on launch (an existing finding, S4).
+
+Your agent's auth model probably looks more like one than the other — pick the closer one as your template. If your agent's auth model doesn't match either pattern (e.g. it stores everything in a single sqlite DB, or in the OS keychain), open an issue describing it before writing code. There may be a structural change worth doing first.
