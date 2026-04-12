@@ -165,7 +165,14 @@ esac
 # Download the collector image for strong monitoring on macOS.
 # On Linux, bpftrace runs on the host kernel directly and doesn't need this.
 # The collector image runs inside the Docker VM on macOS.
-COLLECTOR_ARCH="$(uname -m)"
+# The collector tarball is always a Linux image (the Docker VM runs Linux),
+# so map the host arch to the Linux naming used by the release workflow:
+# Apple Silicon `arm64` → `aarch64`, Linux `x86_64`/`aarch64` pass through.
+case "$ARCH" in
+  arm64|aarch64) COLLECTOR_ARCH="aarch64" ;;
+  x86_64|amd64)  COLLECTOR_ARCH="x86_64" ;;
+  *)             COLLECTOR_ARCH="$ARCH" ;;
+esac
 COLLECTOR_ARCHIVE="fishbowl-collector-linux-${COLLECTOR_ARCH}.tar.gz"
 COLLECTOR_URL="https://github.com/${REPO}/releases/download/${TAG}/${COLLECTOR_ARCHIVE}"
 COLLECTOR_DIR="$HOME/.fishbowl/collector-images"
