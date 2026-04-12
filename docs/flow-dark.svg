@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 340" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <filter id="shadow">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#565f89"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1120" height="340" rx="12" fill="#1a1b26" stroke="#33384d" stroke-width="1"/>
+
+  <!-- Step 1 -->
+  <rect x="20" y="40" width="130" height="100" rx="10" fill="#292e42" stroke="#f7768e" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="85" y="70" font-size="13" font-weight="800" fill="#f7768e" text-anchor="middle">1. Host Scan</text>
+  <text x="85" y="90" font-size="11" fill="#565f89" text-anchor="middle">140+ credential</text>
+  <text x="85" y="105" font-size="11" fill="#565f89" text-anchor="middle">paths checked</text>
+  <text x="85" y="125" font-size="10" fill="#3d59a1" text-anchor="middle">~/.aws, ~/.ssh, .env</text>
+
+  <path d="M 150 90 L 170 90" stroke="#565f89" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 2 -->
+  <rect x="170" y="40" width="130" height="100" rx="10" fill="#292e42" stroke="#f7768e" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="235" y="70" font-size="13" font-weight="800" fill="#f7768e" text-anchor="middle">2. Detect Agent</text>
+  <text x="235" y="90" font-size="11" fill="#565f89" text-anchor="middle">Codex or Claude</text>
+  <text x="235" y="105" font-size="11" fill="#565f89" text-anchor="middle">auto-detected</text>
+  <text x="235" y="125" font-size="10" fill="#3d59a1" text-anchor="middle">CLAUDE.md, ~/.codex/</text>
+
+  <path d="M 300 90 L 320 90" stroke="#565f89" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 3 -->
+  <rect x="320" y="40" width="130" height="100" rx="10" fill="#292e42" stroke="#bb9af7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="385" y="70" font-size="13" font-weight="800" fill="#bb9af7" text-anchor="middle">3. Seed Registry</text>
+  <text x="385" y="90" font-size="11" fill="#565f89" text-anchor="middle">Credential paths</text>
+  <text x="385" y="105" font-size="11" fill="#565f89" text-anchor="middle">mapped to container</text>
+  <text x="385" y="125" font-size="10" fill="#3d59a1" text-anchor="middle">registry.json</text>
+
+  <path d="M 450 90 L 470 90" stroke="#565f89" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 4 -->
+  <rect x="470" y="40" width="130" height="100" rx="10" fill="#292e42" stroke="#9ece6a" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="535" y="70" font-size="13" font-weight="800" fill="#9ece6a" text-anchor="middle">4. Launch</text>
+  <text x="535" y="90" font-size="11" fill="#565f89" text-anchor="middle">Docker container</text>
+  <text x="535" y="105" font-size="11" fill="#565f89" text-anchor="middle">hardened + isolated</text>
+  <text x="535" y="125" font-size="10" fill="#3d59a1" text-anchor="middle">--cap-drop ALL</text>
+
+  <path d="M 600 90 L 620 90" stroke="#565f89" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 5 -->
+  <rect x="620" y="40" width="130" height="100" rx="10" fill="#292e42" stroke="#7aa2f7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="685" y="70" font-size="13" font-weight="800" fill="#7aa2f7" text-anchor="middle">5. Monitor</text>
+  <text x="685" y="90" font-size="11" fill="#565f89" text-anchor="middle">eBPF probes</text>
+  <text x="685" y="105" font-size="11" fill="#565f89" text-anchor="middle">exec/connect/file</text>
+  <text x="685" y="125" font-size="10" fill="#3d59a1" text-anchor="middle">strongest available</text>
+
+  <path d="M 750 90 L 770 90" stroke="#565f89" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 6 -->
+  <rect x="770" y="40" width="130" height="100" rx="10" fill="#292e42" stroke="#e0af68" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="835" y="70" font-size="13" font-weight="800" fill="#e0af68" text-anchor="middle">6. Agent Runs</text>
+  <text x="835" y="90" font-size="11" fill="#565f89" text-anchor="middle">Every access</text>
+  <text x="835" y="105" font-size="11" fill="#565f89" text-anchor="middle">captured</text>
+  <text x="835" y="125" font-size="10" fill="#3d59a1" text-anchor="middle">observation-only</text>
+
+  <path d="M 900 90 L 920 90" stroke="#565f89" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 7 -->
+  <rect x="920" y="40" width="130" height="100" rx="10" fill="#292e42" stroke="#9ece6a" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="985" y="70" font-size="13" font-weight="800" fill="#9ece6a" text-anchor="middle">7. Shutdown</text>
+  <text x="985" y="90" font-size="11" fill="#565f89" text-anchor="middle">Drain collectors</text>
+  <text x="985" y="105" font-size="11" fill="#565f89" text-anchor="middle">sync session back</text>
+  <text x="985" y="125" font-size="10" fill="#3d59a1" text-anchor="middle">merge watcher logs</text>
+
+  <path d="M 985 140 L 985 170" stroke="#bb9af7" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Session report -->
+  <rect x="870" y="170" width="230" height="44" rx="10" fill="#9d7cd8" filter="url(#shadow)"/>
+  <text x="985" y="198" font-size="15" font-weight="700" fill="#1a1b26" text-anchor="middle">agentfence audit</text>
+
+  <!-- Trust boundary label -->
+  <text x="20" y="260" font-size="14" font-weight="700" fill="#a9b1d6">Trust boundary</text>
+  <text x="20" y="280" font-size="12" fill="#565f89">Steps 1-3 run on the host before the container starts.</text>
+  <text x="20" y="298" font-size="12" fill="#565f89">Steps 4-6 run inside the Docker sandbox.</text>
+  <text x="20" y="316" font-size="12" fill="#565f89">Step 7 merges results back to the host after the agent exits.</text>
+</svg>

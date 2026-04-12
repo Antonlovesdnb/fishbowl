@@ -288,6 +288,14 @@ Grouped by category:
 4. `host_scan` findings for the selected agent's auth files are seeded via `auto_auth_path_aliases`
 5. Agent-specific env vars (hardcoded per agent type, e.g. `OPENAI_API_KEY` for Cursor) are auto-passed if set on the host
 
+## Trust boundary
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="trust-boundary-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="trust-boundary-light.svg">
+  <img alt="AgentFence trust boundary" src="trust-boundary-light.svg" width="900">
+</picture>
+
 ## What is NOT auto-passed (security boundary)
 
 Nothing from the host enters the container without explicit user action, except agent file-based auth (the user chose the agent) and per-agent env var hints (compiled into AgentFence, not project-controlled).

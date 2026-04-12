@@ -21,6 +21,12 @@ The container is the security boundary. The agent can see your project directory
 
 ## How it works
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/flow-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/flow-light.svg">
+  <img alt="AgentFence flow" src="docs/flow-light.svg" width="1120">
+</picture>
+
 When you run `agentfence run ~/my-project`, this is what happens:
 
 1. **Host credential scan.** AgentFence walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.agentfence/host-scans/`) — it is NOT visible inside the container. See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
