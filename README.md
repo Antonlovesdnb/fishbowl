@@ -1,6 +1,6 @@
 # Fishbowl
 
-[![Release](https://img.shields.io/badge/release-v2.1.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/releases)
+[![Release](https://img.shields.io/badge/release-v2.1.1-blue?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/releases)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/actions)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
@@ -67,7 +67,7 @@ That's it. The script auto-detects your OS and architecture, downloads the right
 
 **Requirements:** a container runtime — Docker Desktop, Colima, OrbStack, or Rancher Desktop — must be running before `fishbowl run`.
 
-**Options:** pin a version with `FISHBOWL_VERSION=v0.1.9`, override the install directory with `FISHBOWL_BIN_DIR=...`.
+**Options:** pin a version with `FISHBOWL_VERSION=v2.1.1`, override the install directory with `FISHBOWL_BIN_DIR=...`.
 
 **That's the whole install.** The container image gets built automatically the first time you run `fishbowl run` (a few minutes; one-time). If you'd rather get that out of the way up front, run `fishbowl build-image` after installing.
 
@@ -233,8 +233,7 @@ Full credential values are **not intentionally logged**. Environment variable fi
 | Platform | Monitoring | Notes |
 |---|---|---|
 | **Linux** (source or binary) | Host-side eBPF via `sudo` helper | Full exec/connect/file coverage, cgroup-scoped. No collector image needed — bpftrace runs as the host binary. |
-| **macOS** (source install) | eBPF sidecar in Docker VM | Same coverage. `fishbowl build-image` builds both the agent and collector images. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
-| **macOS** (prebuilt binary) | Container-local watchers | The collector image requires the source tree to build. `install.sh` attempts to download a pre-built collector from the release, but this requires repo access. Falls back to container-local telemetry if unavailable. |
+| **macOS** (source or binary) | eBPF sidecar in Docker VM | Full coverage. `install.sh` downloads the pre-built collector image from the release and `docker load`s it; source installs build it via `fishbowl build-image`. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
 | **Any host, fallback** | Container-local watchers | If the eBPF path fails (no root on Linux, Docker not running, etc.), Fishbowl falls back to bash env hooks, inotify file watchers, and `ss` network polling. |
 
 **Container images are platform-specific.** After cloning to a different architecture, run `fishbowl build-image` before `fishbowl run`.

@@ -4,7 +4,7 @@ Project instructions for any Claude session working in this repo. Read this befo
 
 ## What this is
 
-Fishbowl is a Rust CLI that wraps AI coding agents in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. **Validated end-to-end with Codex and Claude Code today.** Cursor / Windsurf / Copilot have scaffolded `Agent` enum variants and detection branches in `agent_runtime.rs` but are not exercised — the wrapped-session flow, auto-auth mounts, and session sync-back have only been tested for the two validated agents. Don't make claims about untested agents in user-facing copy. The full spec lives in `Fishbowl.md`; this file is a fast-orientation cheat sheet.
+Fishbowl is a Rust CLI that wraps AI coding agents in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. **Validated end-to-end with Codex and Claude Code today on both Linux and macOS.** Cursor / Windsurf / Copilot have scaffolded `Agent` enum variants and detection branches in `agent_runtime.rs` but are not exercised — the wrapped-session flow, auto-auth mounts, and session sync-back have only been tested for the two validated agents. Don't make claims about untested agents in user-facing copy. The original design spec lives in `docs/DESIGN_SPEC.md` (formerly `Fishbowl.md`) and diverges from the implementation in places; this file is a fast-orientation cheat sheet.
 
 ## Threat model — read this first
 
@@ -21,7 +21,7 @@ Fishbowl is designed to provide **visibility into opportunistic credential exfil
 - The agent encoding credentials into its own API channel (e.g., to `api.anthropic.com`)
 - Sophisticated multi-step exfil chains
 
-**Fishbowl is observation-only at runtime.** The only "enforcement" is the static container boundary itself (Docker namespaces, `--cap-drop ALL`, `--security-opt no-new-privileges`). Fishbowl does not block, terminate, or interfere with the agent at runtime — no `iptables` rules, no process kills, no `docker stop` on findings. Every layer (in-container watchers, host eBPF collectors) is audit/telemetry. `--monitor strong` gives *stronger observation* via Linux host-side eBPF, **not** dynamic enforcement. Don't add blocking — Codex removed it deliberately and `README.md` + `Fishbowl.md` say so explicitly.
+**Fishbowl is observation-only at runtime.** The only "enforcement" is the static container boundary itself (Docker namespaces, `--cap-drop ALL`, `--security-opt no-new-privileges`). Fishbowl does not block, terminate, or interfere with the agent at runtime — no `iptables` rules, no process kills, no `docker stop` on findings. Every layer (in-container watchers, host eBPF collectors) is audit/telemetry. `--monitor strong` gives *stronger observation* via Linux host-side eBPF, **not** dynamic enforcement. Don't add blocking — Codex removed it deliberately and `README.md` + `docs/DESIGN_SPEC.md` say so explicitly.
 
 ## Architecture (3 layers)
 
@@ -81,7 +81,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 ## Key conventions
 
 - **CLI surface is intentionally minimal.** Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. `.fishbowl.toml` is untrusted project input — don't add new features that auto-apply from it without `--trust-config`.
-- **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Review docs are versioned (`SECURITY_REVIEW.md` → `_4.md`); new passes reference prior IDs (S1–S16, N1–N14).
+- **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Findings are tracked in `MEMORY.md` with stable IDs (S1–S16 from full security passes, N1–N14 from narrower passes); new review work should reuse those IDs when revisiting prior findings rather than renumbering.
 - **`auto_auth_path_aliases` duplicates file lists** from `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts`. When adding new auto-mounted files to either materialize function, also update `auto_auth_path_aliases` so the registry seed picks them up.
 - **`docs/DESIGN_SPEC.md` (formerly `Fishbowl.md`) is the original design spec, not a contract.** Implementation diverges in places — check the code, not the spec.
 - **Dangerous-var lists are duplicated** in `container/bash_env.sh` and `src/ebpf.rs` (finding N5). Keep both in sync when editing either.
@@ -112,5 +112,4 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - `docs/DESIGN_SPEC.md` — original design spec (historical, diverges from implementation)
 - `README.md` — usage, log format, session review, known limitations
 - `MEMORY.md` — consolidated findings snapshot from review passes + 2026-04-09 runtime validation
-- `SECURITY_REVIEW.md` → `SECURITY_REVIEW_4.md` — full review history
 - `.fishbowl.toml` — project-level config; loader at `src/config.rs`
