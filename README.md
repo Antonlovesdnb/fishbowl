@@ -65,7 +65,9 @@ That's it. The script auto-detects your OS and architecture, downloads the right
 
 **Options:** pin a version with `FISHBOWL_VERSION=v0.1.9`, override the install directory with `FISHBOWL_BIN_DIR=...`.
 
-> **Building from source:** `cargo install --path . && fishbowl build-image` (requires Rust >= 1.85). Only needed if you're contributing or want to modify the container image.
+**That's the whole install.** The container image gets built automatically the first time you run `fishbowl run` (a few minutes; one-time). If you'd rather get that out of the way up front, run `fishbowl build-image` after installing.
+
+> **Building from source:** `cargo install --path .` (requires Rust >= 1.85). Only needed if you're contributing or want to modify the container image. The first `fishbowl run` will build the container image automatically, same as the prebuilt-binary path.
 
 ### Uninstall
 

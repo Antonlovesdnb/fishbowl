@@ -191,9 +191,11 @@ cat <<EOF
 
 Fishbowl ${TAG} installed.
 
-Next steps:
-  fishbowl build-image    # build the container image (one-time)
+Next step:
   fishbowl run            # run the current directory in the sandbox
+
+The first run auto-builds the container image (a few minutes; one-time).
+To build it up front instead: fishbowl build-image
 
 Docs: https://github.com/${REPO}
 EOF
