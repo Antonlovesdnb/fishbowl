@@ -200,7 +200,7 @@ Full credential values are **not intentionally logged**. Environment variable fi
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/trust-boundary-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/trust-boundary-light.svg">
-  <img alt="AgentFence trust boundary" src="docs/trust-boundary-light.svg" width="1020">
+  <img alt="AgentFence trust boundary" src="docs/trust-boundary-light.svg" width="820">
 </picture>
 
 AgentFence provides **visibility into opportunistic credential exfiltration** — malicious npm/pip postinstall scripts, env-var poisoning (CVE-2026-22708), MCP config tampering via prompt injection (CVE-2025-54135/54136), and prompt injection that runs `curl`/`wget` to exfiltrate credentials.

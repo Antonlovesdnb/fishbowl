@@ -1,88 +1,68 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 480" font-family="system-ui, -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 520" font-family="system-ui, -apple-system, sans-serif">
   <defs>
     <filter id="shadow">
-      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.2"/>
     </filter>
-    <marker id="allow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#9ece6a"/>
-    </marker>
-    <marker id="prompt" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#e0af68"/>
-    </marker>
-    <marker id="explicit" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#7aa2f7"/>
-    </marker>
   </defs>
 
-  <rect x="0" y="0" width="1020" height="480" rx="12" fill="#1a1b26" stroke="#33384d" stroke-width="1"/>
+  <rect x="0" y="0" width="820" height="520" rx="12" fill="#1a1b26" stroke="#33384d" stroke-width="1"/>
 
-  <text x="510" y="36" font-size="20" font-weight="800" fill="#a9b1d6" text-anchor="middle">What enters the container?</text>
+  <text x="410" y="38" font-size="22" font-weight="800" fill="#a9b1d6" text-anchor="middle">What enters the container?</text>
 
-  <!-- Host -->
-  <rect x="20" y="54" width="300" height="406" rx="12" fill="#1f2335" stroke="#33384d" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="170" y="84" font-size="18" font-weight="700" fill="#a9b1d6" text-anchor="middle">Host</text>
+  <!-- Column headers -->
+  <text x="50" y="76" font-size="14" font-weight="700" fill="#565f89">CREDENTIAL</text>
+  <text x="460" y="76" font-size="14" font-weight="700" fill="#565f89">GATE</text>
+  <text x="680" y="76" font-size="14" font-weight="700" fill="#565f89">STATUS</text>
+  <line x1="30" y1="86" x2="790" y2="86" stroke="#33384d" stroke-width="1"/>
 
-  <text x="40" y="120" font-size="15" fill="#a9b1d6">~/.codex/auth.json</text>
-  <text x="40" y="148" font-size="15" fill="#a9b1d6">~/.claude/.credentials.json</text>
-  <text x="40" y="190" font-size="15" fill="#a9b1d6">~/.ssh/id_ed25519</text>
-  <text x="40" y="218" font-size="15" fill="#a9b1d6">~/.ssh/prod_key</text>
-  <text x="40" y="260" font-size="15" fill="#a9b1d6">GH_TOKEN</text>
-  <text x="40" y="288" font-size="15" fill="#a9b1d6">AWS_SECRET_ACCESS_KEY</text>
-  <text x="40" y="330" font-size="15" fill="#a9b1d6">.agentfence.toml mounts</text>
-  <text x="40" y="372" font-size="15" fill="#a9b1d6">.agentfence.toml network</text>
-  <text x="40" y="400" font-size="15" fill="#a9b1d6">.agentfence.toml monitor</text>
-  <text x="40" y="442" font-size="15" fill="#a9b1d6">host_scan.json</text>
+  <!-- Row 1: Agent auth -->
+  <rect x="30" y="96" width="760" height="52" rx="6" fill="#292e42" filter="url(#shadow)"/>
+  <text x="50" y="118" font-size="15" font-weight="600" fill="#9ece6a">~/.codex/  ~/.claude/</text>
+  <text x="50" y="138" font-size="12" fill="#565f89">Agent file-based auth</text>
+  <text x="460" y="118" font-size="14" fill="#9ece6a">Auto (user chose agent)</text>
+  <rect x="672" y="106" width="108" height="30" rx="6" fill="#9ece6a"/>
+  <text x="726" y="126" font-size="13" font-weight="700" fill="#1a1b26" text-anchor="middle">ALLOWED</text>
 
-  <!-- Gate -->
-  <rect x="350" y="54" width="260" height="406" rx="12" fill="#1f2335" stroke="#33384d" stroke-width="1" filter="url(#shadow)"/>
-  <text x="480" y="84" font-size="18" font-weight="700" fill="#a9b1d6" text-anchor="middle">Gate</text>
+  <!-- Row 2: SSH keys -->
+  <rect x="30" y="160" width="760" height="52" rx="6" fill="#292e42" filter="url(#shadow)"/>
+  <text x="50" y="182" font-size="15" font-weight="600" fill="#e0af68">~/.ssh/id_ed25519, prod_key, ...</text>
+  <text x="50" y="202" font-size="12" fill="#565f89">SSH private keys</text>
+  <text x="460" y="182" font-size="14" fill="#e0af68">Interactive prompt</text>
+  <rect x="672" y="170" width="108" height="30" rx="6" fill="#e0af68"/>
+  <text x="726" y="190" font-size="13" font-weight="700" fill="#1a1b26" text-anchor="middle">ASK USER</text>
 
-  <rect x="370" y="104" width="220" height="56" rx="8" fill="#292e42" stroke="#9ece6a" stroke-width="1.5"/>
-  <text x="480" y="130" font-size="15" font-weight="700" fill="#9ece6a" text-anchor="middle">Auto (user chose agent)</text>
-  <text x="480" y="150" font-size="13" fill="#565f89" text-anchor="middle">file-based auth only</text>
+  <!-- Row 3: Env vars -->
+  <rect x="30" y="224" width="760" height="52" rx="6" fill="#292e42" filter="url(#shadow)"/>
+  <text x="50" y="246" font-size="15" font-weight="600" fill="#7aa2f7">GH_TOKEN, AWS_SECRET_ACCESS_KEY, ...</text>
+  <text x="50" y="266" font-size="12" fill="#565f89">Credential environment variables</text>
+  <text x="460" y="246" font-size="14" fill="#7aa2f7">Requires --mount</text>
+  <rect x="672" y="234" width="108" height="30" rx="6" fill="#7aa2f7"/>
+  <text x="726" y="254" font-size="13" font-weight="700" fill="#1a1b26" text-anchor="middle">EXPLICIT</text>
 
-  <rect x="370" y="174" width="220" height="56" rx="8" fill="#292e42" stroke="#e0af68" stroke-width="1.5"/>
-  <text x="480" y="200" font-size="15" font-weight="700" fill="#e0af68" text-anchor="middle">Interactive prompt</text>
-  <text x="480" y="220" font-size="13" fill="#565f89" text-anchor="middle">user picks from list</text>
+  <!-- Row 4: Config mounts -->
+  <rect x="30" y="288" width="760" height="52" rx="6" fill="#292e42" filter="url(#shadow)"/>
+  <text x="50" y="310" font-size="15" font-weight="600" fill="#7aa2f7">.agentfence.toml mounts</text>
+  <text x="50" y="330" font-size="12" fill="#565f89">Project config credential requests</text>
+  <text x="460" y="310" font-size="14" fill="#7aa2f7">Requires --trust-config</text>
+  <rect x="672" y="298" width="108" height="30" rx="6" fill="#7aa2f7"/>
+  <text x="726" y="318" font-size="13" font-weight="700" fill="#1a1b26" text-anchor="middle">EXPLICIT</text>
 
-  <rect x="370" y="244" width="220" height="56" rx="8" fill="#292e42" stroke="#7aa2f7" stroke-width="1.5"/>
-  <text x="480" y="270" font-size="15" font-weight="700" fill="#7aa2f7" text-anchor="middle">Explicit --mount</text>
-  <text x="480" y="290" font-size="13" fill="#565f89" text-anchor="middle">or --trust-config</text>
+  <!-- Row 5: Network/monitor -->
+  <rect x="30" y="352" width="760" height="52" rx="6" fill="#292e42" filter="url(#shadow)"/>
+  <text x="50" y="374" font-size="15" font-weight="600" fill="#f7768e">.agentfence.toml network / monitor</text>
+  <text x="50" y="394" font-size="12" fill="#565f89">Security posture overrides</text>
+  <text x="460" y="374" font-size="14" fill="#f7768e">Ignored (CLI flags only)</text>
+  <rect x="672" y="362" width="108" height="30" rx="6" fill="#f7768e"/>
+  <text x="726" y="382" font-size="13" font-weight="700" fill="#1a1b26" text-anchor="middle">BLOCKED</text>
 
-  <rect x="370" y="316" width="220" height="56" rx="8" fill="#292e42" stroke="#f7768e" stroke-width="1.5"/>
-  <text x="480" y="342" font-size="15" font-weight="700" fill="#f7768e" text-anchor="middle">Blocked</text>
-  <text x="480" y="362" font-size="13" fill="#565f89" text-anchor="middle">CLI flags only</text>
+  <!-- Row 6: host_scan.json -->
+  <rect x="30" y="416" width="760" height="52" rx="6" fill="#292e42" filter="url(#shadow)"/>
+  <text x="50" y="438" font-size="15" font-weight="600" fill="#f7768e">host_scan.json</text>
+  <text x="50" y="458" font-size="12" fill="#565f89">Host credential path inventory</text>
+  <text x="460" y="438" font-size="14" fill="#f7768e">Removed before launch</text>
+  <rect x="672" y="426" width="108" height="30" rx="6" fill="#f7768e"/>
+  <text x="726" y="446" font-size="13" font-weight="700" fill="#1a1b26" text-anchor="middle">BLOCKED</text>
 
-  <rect x="370" y="386" width="220" height="56" rx="8" fill="#292e42" stroke="#f7768e" stroke-width="1.5"/>
-  <text x="480" y="412" font-size="15" font-weight="700" fill="#f7768e" text-anchor="middle">Removed before launch</text>
-  <text x="480" y="432" font-size="13" fill="#565f89" text-anchor="middle">host-only location</text>
-
-  <!-- Container -->
-  <rect x="640" y="54" width="360" height="406" rx="12" fill="#1f2335" stroke="#f7768e" stroke-width="2" stroke-dasharray="8 4" filter="url(#shadow)"/>
-  <text x="820" y="84" font-size="18" font-weight="700" fill="#f7768e" text-anchor="middle">Container</text>
-
-  <path d="M 320 130 L 370 130" stroke="#9ece6a" stroke-width="2" marker-end="url(#allow)"/>
-  <path d="M 320 148 L 370 148" stroke="#9ece6a" stroke-width="2" marker-end="url(#allow)"/>
-  <path d="M 590 132 L 640 132" stroke="#9ece6a" stroke-width="2" marker-end="url(#allow)"/>
-  <text x="660" y="126" font-size="14" fill="#9ece6a">/agentfence/home/.codex/</text>
-  <text x="660" y="148" font-size="14" fill="#9ece6a">/agentfence/home/.claude/</text>
-
-  <path d="M 320 190 L 370 202" stroke="#e0af68" stroke-width="2" marker-end="url(#prompt)"/>
-  <path d="M 320 218 L 370 202" stroke="#e0af68" stroke-width="2" marker-end="url(#prompt)"/>
-  <path d="M 590 202 L 640 202" stroke="#e0af68" stroke-width="2" marker-end="url(#prompt)"/>
-  <text x="660" y="196" font-size="14" fill="#e0af68">/agentfence/ssh/id_ed25519</text>
-  <text x="660" y="218" font-size="13" fill="#565f89">(only if user approves)</text>
-
-  <path d="M 320 260 L 370 272" stroke="#7aa2f7" stroke-width="2" marker-end="url(#explicit)"/>
-  <path d="M 320 288 L 370 272" stroke="#7aa2f7" stroke-width="2" marker-end="url(#explicit)"/>
-  <path d="M 320 330 L 370 272" stroke="#7aa2f7" stroke-width="2" marker-end="url(#explicit)"/>
-  <path d="M 590 272 L 640 272" stroke="#7aa2f7" stroke-width="2" marker-end="url(#explicit)"/>
-  <text x="660" y="268" font-size="14" fill="#7aa2f7">passed via --env-file</text>
-  <text x="660" y="290" font-size="13" fill="#565f89">(only with explicit --mount)</text>
-
-  <text x="660" y="346" font-size="14" fill="#f7768e">network / monitor: ignored</text>
-  <text x="660" y="368" font-size="13" fill="#565f89">(use CLI flags instead)</text>
-
-  <text x="660" y="416" font-size="14" fill="#f7768e">host_scan.json: not visible</text>
-  <text x="660" y="438" font-size="13" fill="#565f89">(moved to ~/.agentfence/)</text>
+  <!-- Footer -->
+  <text x="410" y="498" font-size="13" fill="#565f89" text-anchor="middle">Nothing from the host enters the container without explicit user action.</text>
 </svg>
