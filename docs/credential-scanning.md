@@ -293,7 +293,7 @@ Grouped by category:
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="trust-boundary-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="trust-boundary-light.svg">
-  <img alt="AgentFence trust boundary" src="trust-boundary-light.svg" width="900">
+  <img alt="AgentFence trust boundary" src="trust-boundary-light.svg" width="1020">
 </picture>
 
 ## What is NOT auto-passed (security boundary)

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 340" font-family="system-ui, -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" font-family="system-ui, -apple-system, sans-serif">
   <defs>
     <filter id="shadow">
       <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.1"/>
@@ -6,82 +6,84 @@
     <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#868e96"/>
     </marker>
+    <marker id="purplearrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#7950f2"/>
+    </marker>
   </defs>
 
-  <!-- Background -->
-  <rect x="0" y="0" width="1120" height="340" rx="12" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+  <rect x="0" y="0" width="1200" height="380" rx="12" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
 
-  <!-- Step 1: Host Scan -->
-  <rect x="20" y="40" width="130" height="100" rx="10" fill="#fff5f5" stroke="#e03131" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="85" y="70" font-size="13" font-weight="800" fill="#c92a2a" text-anchor="middle">1. Host Scan</text>
-  <text x="85" y="90" font-size="11" fill="#868e96" text-anchor="middle">140+ credential</text>
-  <text x="85" y="105" font-size="11" fill="#868e96" text-anchor="middle">paths checked</text>
-  <text x="85" y="125" font-size="10" fill="#adb5bd" text-anchor="middle">~/.aws, ~/.ssh, .env</text>
+  <!-- Step 1 -->
+  <rect x="20" y="40" width="140" height="120" rx="10" fill="#fff5f5" stroke="#e03131" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="90" y="72" font-size="15" font-weight="800" fill="#c92a2a" text-anchor="middle">1. Host Scan</text>
+  <text x="90" y="96" font-size="13" fill="#868e96" text-anchor="middle">140+ credential</text>
+  <text x="90" y="114" font-size="13" fill="#868e96" text-anchor="middle">paths checked</text>
+  <text x="90" y="146" font-size="12" fill="#adb5bd" text-anchor="middle">~/.aws, ~/.ssh, .env</text>
 
-  <path d="M 150 90 L 170 90" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 160 100 L 182 100" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- Step 2: Agent Detection -->
-  <rect x="170" y="40" width="130" height="100" rx="10" fill="#fff5f5" stroke="#e03131" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="235" y="70" font-size="13" font-weight="800" fill="#c92a2a" text-anchor="middle">2. Detect Agent</text>
-  <text x="235" y="90" font-size="11" fill="#868e96" text-anchor="middle">Codex or Claude</text>
-  <text x="235" y="105" font-size="11" fill="#868e96" text-anchor="middle">auto-detected</text>
-  <text x="235" y="125" font-size="10" fill="#adb5bd" text-anchor="middle">CLAUDE.md, ~/.codex/</text>
+  <!-- Step 2 -->
+  <rect x="182" y="40" width="140" height="120" rx="10" fill="#fff5f5" stroke="#e03131" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="252" y="72" font-size="15" font-weight="800" fill="#c92a2a" text-anchor="middle">2. Detect Agent</text>
+  <text x="252" y="96" font-size="13" fill="#868e96" text-anchor="middle">Codex or Claude</text>
+  <text x="252" y="114" font-size="13" fill="#868e96" text-anchor="middle">auto-detected</text>
+  <text x="252" y="146" font-size="12" fill="#adb5bd" text-anchor="middle">CLAUDE.md, ~/.codex/</text>
 
-  <path d="M 300 90 L 320 90" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 322 100 L 344 100" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- Step 3: Registry Seed -->
-  <rect x="320" y="40" width="130" height="100" rx="10" fill="#f3f0ff" stroke="#7950f2" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="385" y="70" font-size="13" font-weight="800" fill="#6741d9" text-anchor="middle">3. Seed Registry</text>
-  <text x="385" y="90" font-size="11" fill="#868e96" text-anchor="middle">Credential paths</text>
-  <text x="385" y="105" font-size="11" fill="#868e96" text-anchor="middle">mapped to container</text>
-  <text x="385" y="125" font-size="10" fill="#adb5bd" text-anchor="middle">registry.json</text>
+  <!-- Step 3 -->
+  <rect x="344" y="40" width="140" height="120" rx="10" fill="#f3f0ff" stroke="#7950f2" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="414" y="72" font-size="15" font-weight="800" fill="#6741d9" text-anchor="middle">3. Seed Registry</text>
+  <text x="414" y="96" font-size="13" fill="#868e96" text-anchor="middle">Credential paths</text>
+  <text x="414" y="114" font-size="13" fill="#868e96" text-anchor="middle">mapped to container</text>
+  <text x="414" y="146" font-size="12" fill="#adb5bd" text-anchor="middle">registry.json</text>
 
-  <path d="M 450 90 L 470 90" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 484 100 L 506 100" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- Step 4: Container Launch -->
-  <rect x="470" y="40" width="130" height="100" rx="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="535" y="70" font-size="13" font-weight="800" fill="#2e7d32" text-anchor="middle">4. Launch</text>
-  <text x="535" y="90" font-size="11" fill="#868e96" text-anchor="middle">Docker container</text>
-  <text x="535" y="105" font-size="11" fill="#868e96" text-anchor="middle">hardened + isolated</text>
-  <text x="535" y="125" font-size="10" fill="#adb5bd" text-anchor="middle">--cap-drop ALL</text>
+  <!-- Step 4 -->
+  <rect x="506" y="40" width="140" height="120" rx="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="576" y="72" font-size="15" font-weight="800" fill="#2e7d32" text-anchor="middle">4. Launch</text>
+  <text x="576" y="96" font-size="13" fill="#868e96" text-anchor="middle">Docker container</text>
+  <text x="576" y="114" font-size="13" fill="#868e96" text-anchor="middle">hardened + isolated</text>
+  <text x="576" y="146" font-size="12" fill="#adb5bd" text-anchor="middle">--cap-drop ALL</text>
 
-  <path d="M 600 90 L 620 90" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 646 100 L 668 100" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- Step 5: Monitoring -->
-  <rect x="620" y="40" width="130" height="100" rx="10" fill="#edf2ff" stroke="#4263eb" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="685" y="70" font-size="13" font-weight="800" fill="#364fc7" text-anchor="middle">5. Monitor</text>
-  <text x="685" y="90" font-size="11" fill="#868e96" text-anchor="middle">eBPF probes</text>
-  <text x="685" y="105" font-size="11" fill="#868e96" text-anchor="middle">exec/connect/file</text>
-  <text x="685" y="125" font-size="10" fill="#adb5bd" text-anchor="middle">strongest available</text>
+  <!-- Step 5 -->
+  <rect x="668" y="40" width="140" height="120" rx="10" fill="#edf2ff" stroke="#4263eb" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="738" y="72" font-size="15" font-weight="800" fill="#364fc7" text-anchor="middle">5. Monitor</text>
+  <text x="738" y="96" font-size="13" fill="#868e96" text-anchor="middle">eBPF probes</text>
+  <text x="738" y="114" font-size="13" fill="#868e96" text-anchor="middle">exec / connect / file</text>
+  <text x="738" y="146" font-size="12" fill="#adb5bd" text-anchor="middle">strongest available</text>
 
-  <path d="M 750 90 L 770 90" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 808 100 L 830 100" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- Step 6: Agent Runs -->
-  <rect x="770" y="40" width="130" height="100" rx="10" fill="#fff9db" stroke="#e67700" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="835" y="70" font-size="13" font-weight="800" fill="#e67700" text-anchor="middle">6. Agent Runs</text>
-  <text x="835" y="90" font-size="11" fill="#868e96" text-anchor="middle">Every access</text>
-  <text x="835" y="105" font-size="11" fill="#868e96" text-anchor="middle">captured</text>
-  <text x="835" y="125" font-size="10" fill="#adb5bd" text-anchor="middle">observation-only</text>
+  <!-- Step 6 -->
+  <rect x="830" y="40" width="140" height="120" rx="10" fill="#fff9db" stroke="#e67700" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="900" y="72" font-size="15" font-weight="800" fill="#e67700" text-anchor="middle">6. Agent Runs</text>
+  <text x="900" y="96" font-size="13" fill="#868e96" text-anchor="middle">Every credential</text>
+  <text x="900" y="114" font-size="13" fill="#868e96" text-anchor="middle">access captured</text>
+  <text x="900" y="146" font-size="12" fill="#adb5bd" text-anchor="middle">observation-only</text>
 
-  <path d="M 900 90 L 920 90" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 970 100 L 992 100" stroke="#868e96" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-  <!-- Step 7: Shutdown -->
-  <rect x="920" y="40" width="130" height="100" rx="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="985" y="70" font-size="13" font-weight="800" fill="#2e7d32" text-anchor="middle">7. Shutdown</text>
-  <text x="985" y="90" font-size="11" fill="#868e96" text-anchor="middle">Drain collectors</text>
-  <text x="985" y="105" font-size="11" fill="#868e96" text-anchor="middle">sync session back</text>
-  <text x="985" y="125" font-size="10" fill="#adb5bd" text-anchor="middle">merge watcher logs</text>
+  <!-- Step 7 -->
+  <rect x="992" y="40" width="140" height="120" rx="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="1062" y="72" font-size="15" font-weight="800" fill="#2e7d32" text-anchor="middle">7. Shutdown</text>
+  <text x="1062" y="96" font-size="13" fill="#868e96" text-anchor="middle">Drain collectors</text>
+  <text x="1062" y="114" font-size="13" fill="#868e96" text-anchor="middle">sync session back</text>
+  <text x="1062" y="146" font-size="12" fill="#adb5bd" text-anchor="middle">merge watcher logs</text>
 
   <!-- Output arrow -->
-  <path d="M 985 140 L 985 170" stroke="#7950f2" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 1062 160 L 1062 194" stroke="#7950f2" stroke-width="2" marker-end="url(#purplearrow)"/>
 
-  <!-- Session report -->
-  <rect x="870" y="170" width="230" height="44" rx="10" fill="#7950f2" filter="url(#shadow)"/>
-  <text x="985" y="198" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">agentfence audit</text>
+  <!-- Audit report -->
+  <rect x="942" y="194" width="240" height="48" rx="10" fill="#7950f2" filter="url(#shadow)"/>
+  <text x="1062" y="224" font-size="17" font-weight="700" fill="#fff" text-anchor="middle">agentfence audit</text>
 
-  <!-- Trust boundary label -->
-  <text x="20" y="260" font-size="14" font-weight="700" fill="#495057">Trust boundary</text>
-  <text x="20" y="280" font-size="12" fill="#868e96">Steps 1-3 run on the host before the container starts.</text>
-  <text x="20" y="298" font-size="12" fill="#868e96">Steps 4-6 run inside the Docker sandbox.</text>
-  <text x="20" y="316" font-size="12" fill="#868e96">Step 7 merges results back to the host after the agent exits.</text>
+  <!-- Trust boundary -->
+  <text x="20" y="290" font-size="16" font-weight="700" fill="#495057">Trust boundary</text>
+  <text x="20" y="314" font-size="14" fill="#868e96">Steps 1-3 run on the host before the container starts.</text>
+  <text x="20" y="336" font-size="14" fill="#868e96">Steps 4-6 run inside the Docker sandbox.</text>
+  <text x="20" y="358" font-size="14" fill="#868e96">Step 7 merges results back to the host after the agent exits.</text>
 </svg>

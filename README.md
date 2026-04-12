@@ -24,7 +24,7 @@ The container is the security boundary. The agent can see your project directory
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/flow-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/flow-light.svg">
-  <img alt="AgentFence flow" src="docs/flow-light.svg" width="1120">
+  <img alt="AgentFence flow" src="docs/flow-light.svg" width="1200">
 </picture>
 
 When you run `agentfence run ~/my-project`, this is what happens:
@@ -200,7 +200,7 @@ Full credential values are **not intentionally logged**. Environment variable fi
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/trust-boundary-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/trust-boundary-light.svg">
-  <img alt="AgentFence trust boundary" src="docs/trust-boundary-light.svg" width="900">
+  <img alt="AgentFence trust boundary" src="docs/trust-boundary-light.svg" width="1020">
 </picture>
 
 AgentFence provides **visibility into opportunistic credential exfiltration** — malicious npm/pip postinstall scripts, env-var poisoning (CVE-2026-22708), MCP config tampering via prompt injection (CVE-2025-54135/54136), and prompt injection that runs `curl`/`wget` to exfiltrate credentials.
