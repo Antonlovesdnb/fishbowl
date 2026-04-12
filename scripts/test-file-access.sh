@@ -21,12 +21,12 @@ cargo run -- run \
   --project "$ROOT_DIR" \
   --mount "$SECRET_FILE" \
   --logs-dir "$LOG_DIR" \
-  --name agentfence-file-access-test \
+  --name fishbowl-file-access-test \
   -- \
   /bin/bash -lc \
   'sleep 1; python3 - <<'"'"'PY'"'"'
 import time
-with open("/agentfence/creds/demo.key", "r", encoding="utf-8") as handle:
+with open("/fishbowl/creds/demo.key", "r", encoding="utf-8") as handle:
     handle.read()
     time.sleep(1)
 PY
@@ -38,10 +38,10 @@ cat "$LOG_DIR/registry.json"
 echo "[test-file-access] audit output"
 cat "$LOG_DIR/audit.jsonl"
 
-grep -q '"path": "/agentfence/creds/demo.key"' "$LOG_DIR/registry.json"
+grep -q '"path": "/fishbowl/creds/demo.key"' "$LOG_DIR/registry.json"
 grep -q '"access_count": 1' "$LOG_DIR/registry.json"
 grep -q '"event":"credential_access"' "$LOG_DIR/audit.jsonl"
-grep -q '"path":"/agentfence/creds/demo.key"' "$LOG_DIR/audit.jsonl"
+grep -q '"path":"/fishbowl/creds/demo.key"' "$LOG_DIR/audit.jsonl"
 grep -q '"process_name":"python3"' "$LOG_DIR/audit.jsonl"
 grep -q 'python3(pid=' "$LOG_DIR/audit.jsonl"
 

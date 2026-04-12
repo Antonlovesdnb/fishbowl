@@ -4,11 +4,11 @@ Project instructions for any Claude session working in this repo. Read this befo
 
 ## What this is
 
-AgentFence is a Rust CLI that wraps AI coding agents in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. **Validated end-to-end with Codex and Claude Code today.** Cursor / Windsurf / Copilot have scaffolded `Agent` enum variants and detection branches in `agent_runtime.rs` but are not exercised — the wrapped-session flow, auto-auth mounts, and session sync-back have only been tested for the two validated agents. Don't make claims about untested agents in user-facing copy. The full spec lives in `AgentFence.md`; this file is a fast-orientation cheat sheet.
+Fishbowl is a Rust CLI that wraps AI coding agents in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. **Validated end-to-end with Codex and Claude Code today.** Cursor / Windsurf / Copilot have scaffolded `Agent` enum variants and detection branches in `agent_runtime.rs` but are not exercised — the wrapped-session flow, auto-auth mounts, and session sync-back have only been tested for the two validated agents. Don't make claims about untested agents in user-facing copy. The full spec lives in `Fishbowl.md`; this file is a fast-orientation cheat sheet.
 
 ## Threat model — read this first
 
-AgentFence is designed to provide **visibility into opportunistic credential exfiltration**, not to defend against determined adversaries. This narrower goal is load-bearing — over-engineering against sophisticated attacks is the wrong direction.
+Fishbowl is designed to provide **visibility into opportunistic credential exfiltration**, not to defend against determined adversaries. This narrower goal is load-bearing — over-engineering against sophisticated attacks is the wrong direction.
 
 **In scope:**
 - Malicious npm/pip postinstall scripts and generic credential stealers
@@ -21,7 +21,7 @@ AgentFence is designed to provide **visibility into opportunistic credential exf
 - The agent encoding credentials into its own API channel (e.g., to `api.anthropic.com`)
 - Sophisticated multi-step exfil chains
 
-**AgentFence is observation-only at runtime.** The only "enforcement" is the static container boundary itself (Docker namespaces, `--cap-drop ALL`, `--security-opt no-new-privileges`). AgentFence does not block, terminate, or interfere with the agent at runtime — no `iptables` rules, no process kills, no `docker stop` on findings. Every layer (in-container watchers, host eBPF collectors) is audit/telemetry. `--monitor strong` gives *stronger observation* via Linux host-side eBPF, **not** dynamic enforcement. Don't add blocking — Codex removed it deliberately and `README.md` + `AgentFence.md` say so explicitly.
+**Fishbowl is observation-only at runtime.** The only "enforcement" is the static container boundary itself (Docker namespaces, `--cap-drop ALL`, `--security-opt no-new-privileges`). Fishbowl does not block, terminate, or interfere with the agent at runtime — no `iptables` rules, no process kills, no `docker stop` on findings. Every layer (in-container watchers, host eBPF collectors) is audit/telemetry. `--monitor strong` gives *stronger observation* via Linux host-side eBPF, **not** dynamic enforcement. Don't add blocking — Codex removed it deliberately and `README.md` + `Fishbowl.md` say so explicitly.
 
 ## Architecture (3 layers)
 
@@ -33,13 +33,13 @@ AgentFence is designed to provide **visibility into opportunistic credential exf
 - `monitor.rs` — backend selection (`ContainerLocal` / `LinuxHostEbpf` / `DockerDesktopVm`)
 - `ebpf.rs` — bpftrace exec/net/file collectors and credential-access correlation
 - `agent_runtime.rs` — agent auto-detection (Codex + Claude Code validated; Cursor/Windsurf/Copilot scaffolded only)
-- `audit.rs` — `agentfence audit` report generator
-- `config.rs` — `.agentfence.toml` loader
+- `audit.rs` — `fishbowl audit` report generator
+- `config.rs` — `.fishbowl.toml` loader
 
 **2. Container (`container/`)** — in-container watchers
 - `Dockerfile`, `Collector.Dockerfile`, `entrypoint.sh`, `bashrc`
 - `bash_env.sh` — DEBUG trap + PROMPT_COMMAND hooks for env-var monitoring
-- `file_watcher.py` — inotify on `/agentfence/creds/` and `/agentfence/ssh/`
+- `file_watcher.py` — inotify on `/fishbowl/creds/` and `/fishbowl/ssh/`
 - `workspace_watcher.py` — inotify + scan of mounted project for `.env`/keys
 - `network_watcher.py` — `ss -tupnH` polling every 50ms with credential correlation
 - `audit_log.py`, `registry_update.py` — legacy CLI audit writers; watchers now write inline
@@ -47,46 +47,46 @@ AgentFence is designed to provide **visibility into opportunistic credential exf
 **3. Host eBPF collectors** — bpftrace scripts, cgroupid-scoped
 - **Linux:** via `sudo` helper running on the host kernel directly
 - **macOS:** via privileged sidecar container inside the Docker VM (Colima/Docker Desktop/OrbStack/Rancher). Requires tracefs + debugfs bind-mounts (added 2026-04-09). Validated end-to-end on Colima 6.8.0-100-generic aarch64.
-- Both paths require the collector image (`agentfence-collector:dev`), which is built from `Collector.Dockerfile`. Source installs build it via `agentfence build-image`; prebuilt-binary installs skip it (no source tree) and fall back to container-local telemetry.
+- Both paths require the collector image (`fishbowl-collector:dev`), which is built from `Collector.Dockerfile`. Source installs build it via `fishbowl build-image`; prebuilt-binary installs skip it (no source tree) and fall back to container-local telemetry.
 
 Key paths:
-- Session logs: `~/.agentfence/logs/session-{timestamp}/`
+- Session logs: `~/.fishbowl/logs/session-{timestamp}/`
   - `audit.jsonl` — all events (JSONL, one object per line)
   - `registry.json` — live credential registry (seeded from host scan + updated at runtime)
   - `findings.jsonl` — credential-egress correlation findings
   - `ebpf_{exec,connect,file}.jsonl` — host eBPF collector events
   - `ebpf_*.stderr.log` — bpftrace stderr (empty = probes attached OK)
   - `ebpf_scope.json` — container scope metadata (cgroup, PID namespace, etc.)
-- Host scan reports: `~/.agentfence/host-scans/session-{timestamp}.json` — credential path enumeration, host-only (NOT mounted into the container as of v0.1.8)
-- Runtime auth dirs: `~/.agentfence/runtime/{session-nonce}/` (0o700, cleaned up after 6h)
-- Container HOME: `/agentfence/home` (bind-mounted from host runtime dir, 0o700)
+- Host scan reports: `~/.fishbowl/host-scans/session-{timestamp}.json` — credential path enumeration, host-only (NOT mounted into the container as of v0.1.8)
+- Runtime auth dirs: `~/.fishbowl/runtime/{session-nonce}/` (0o700, cleaned up after 6h)
+- Container HOME: `/fishbowl/home` (bind-mounted from host runtime dir, 0o700)
 
 **Full credential values are not intentionally logged.** Env var previews include a short prefix (first 4 chars + length) via `redact_env_value()` in `ebpf.rs`. Credential env vars are passed to Docker via `--env-file` (not `--env` CLI args) to avoid exposure in the host process table. The `host_scan.json` file lists credential PATHS only (no contents) and is relocated out of the container-visible mount before the agent starts.
 
 ## Build / run / test
 
 ```bash
-cargo install --path .                                          # install agentfence binary
-agentfence build-image                                          # build image (skipped if it exists)
-agentfence run ~/projects/my-app                                # default invocation
-agentfence run . --mount ~/.ssh/key --mount GH_TOKEN            # --mount auto-detects type
-agentfence run . --network host --monitor strong                # host net + Linux eBPF
-agentfence audit [SESSION]                                      # review session logs
+cargo install --path .                                          # install fishbowl binary
+fishbowl build-image                                          # build image (skipped if it exists)
+fishbowl run ~/projects/my-app                                # default invocation
+fishbowl run . --mount ~/.ssh/key --mount GH_TOKEN            # --mount auto-detects type
+fishbowl run . --network host --monitor strong                # host net + Linux eBPF
+fishbowl audit [SESSION]                                      # review session logs
 
 make build | test-launch | test-audit | test-discovery | test-file-access | test-workspace | test-network
 ```
 
-`.env.agentfence-test` holds test env vars used by `make test-*` scripts.
+`.env.fishbowl-test` holds test env vars used by `make test-*` scripts.
 
 ## Key conventions
 
-- **CLI surface is intentionally minimal.** Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. `.agentfence.toml` is untrusted project input — don't add new features that auto-apply from it without `--trust-config`.
+- **CLI surface is intentionally minimal.** Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. `.fishbowl.toml` is untrusted project input — don't add new features that auto-apply from it without `--trust-config`.
 - **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Review docs are versioned (`SECURITY_REVIEW.md` → `_4.md`); new passes reference prior IDs (S1–S16, N1–N14).
 - **`auto_auth_path_aliases` duplicates file lists** from `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts`. When adding new auto-mounted files to either materialize function, also update `auto_auth_path_aliases` so the registry seed picks them up.
-- **`docs/DESIGN_SPEC.md` (formerly `AgentFence.md`) is the original design spec, not a contract.** Implementation diverges in places — check the code, not the spec.
+- **`docs/DESIGN_SPEC.md` (formerly `Fishbowl.md`) is the original design spec, not a contract.** Implementation diverges in places — check the code, not the spec.
 - **Dangerous-var lists are duplicated** in `container/bash_env.sh` and `src/ebpf.rs` (finding N5). Keep both in sync when editing either.
 - **Two backends, one CLI.** `monitor.rs` selects `ContainerLocal` / `LinuxHostEbpf` / `DockerDesktopVm` based on platform + `--monitor`. Don't add Linux-only logic outside `ebpf.rs`.
-- **Container runs as host UID:GID** via `--user`. The host-side runtime dir is bind-mounted over `/agentfence/home` so the non-root container user has a writable 0o700 home.
+- **Container runs as host UID:GID** via `--user`. The host-side runtime dir is bind-mounted over `/fishbowl/home` so the non-root container user has a writable 0o700 home.
 
 ## Gotchas
 
@@ -97,10 +97,10 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - **Project content must never control security posture.** Three rules:
   1. Env vars: only `agent_auth_env_hints(agent)` are auto-passed (e.g. `OPENAI_API_KEY` for Cursor — the user chose the agent). Everything else (including `GH_TOKEN`) requires `--mount`. Project-text-discovered vars are printed as recommendations only.
   2. SSH keys: presented as an interactive numbered list. User picks which to mount. Non-interactive mode requires `--mount ~/.ssh/<key>`. No auto-mounting.
-  3. `.agentfence.toml`: fully untrusted. Mounts are never applied from config (always require `--mount` on the CLI). Network and monitor overrides are always ignored (CLI flags only). `--no-config` skips project config entirely.
-- **`PROMPT_COMMAND` is itself a watched dangerous var** but is also how AgentFence installs its hooks (S15). Edits must preserve the existing hook chain.
+  3. `.fishbowl.toml`: fully untrusted. Mounts are never applied from config (always require `--mount` on the CLI). Network and monitor overrides are always ignored (CLI flags only). `--no-config` skips project config entirely.
+- **`PROMPT_COMMAND` is itself a watched dangerous var** but is also how Fishbowl installs its hooks (S15). Edits must preserve the existing hook chain.
 - **Double bind-mount** of the project dir at both the computed workspace path and `/workspace` when they differ (N8/N12). Produces duplicate inotify events.
-- **macOS strong monitoring works on source installs, not prebuilt binaries** (validated 2026-04-09 on Colima 6.8.0-100-generic aarch64). The `DockerVmHelper` backend is end-to-end functional: provider auto-detect, privileged sidecar spawn with tracefs/debugfs bind-mounts, bpftrace probe attach, exec/connect/file event capture, credential-access registry updates. But the host's `build_image()` skips the collector image when `dev_source_root()` is `None`, and the GitHub release workflow doesn't publish the collector image to a registry. So prebuilt-binary installs on macOS can't use `--monitor strong` today — they fall back to `--monitor basic`. To use strong monitoring on macOS: `cargo install --path .` + `agentfence build-image`. Long-term fix is publishing `agentfence-collector` to GHCR so prebuilt-binary installs can `docker pull` it.
+- **macOS strong monitoring works on source installs, not prebuilt binaries** (validated 2026-04-09 on Colima 6.8.0-100-generic aarch64). The `DockerVmHelper` backend is end-to-end functional: provider auto-detect, privileged sidecar spawn with tracefs/debugfs bind-mounts, bpftrace probe attach, exec/connect/file event capture, credential-access registry updates. But the host's `build_image()` skips the collector image when `dev_source_root()` is `None`, and the GitHub release workflow doesn't publish the collector image to a registry. So prebuilt-binary installs on macOS can't use `--monitor strong` today — they fall back to `--monitor basic`. To use strong monitoring on macOS: `cargo install --path .` + `fishbowl build-image`. Long-term fix is publishing `fishbowl-collector` to GHCR so prebuilt-binary installs can `docker pull` it.
 
 ## Known security trade-offs
 
@@ -113,4 +113,4 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - `README.md` — usage, log format, session review, known limitations
 - `MEMORY.md` — consolidated findings snapshot from review passes + 2026-04-09 runtime validation
 - `SECURITY_REVIEW.md` → `SECURITY_REVIEW_4.md` — full review history
-- `.agentfence.toml` — project-level config; loader at `src/config.rs`
+- `.fishbowl.toml` — project-level config; loader at `src/config.rs`

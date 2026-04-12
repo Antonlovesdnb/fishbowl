@@ -79,7 +79,7 @@
 
   <!-- Audit report -->
   <rect x="942" y="194" width="240" height="48" rx="10" fill="#7950f2" filter="url(#shadow)"/>
-  <text x="1062" y="224" font-size="17" font-weight="700" fill="#fff" text-anchor="middle">agentfence audit</text>
+  <text x="1062" y="224" font-size="17" font-weight="700" fill="#fff" text-anchor="middle">fishbowl audit</text>
 
   <!-- Trust boundary -->
   <text x="20" y="290" font-size="16" font-weight="700" fill="#495057">Trust boundary</text>

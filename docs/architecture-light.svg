@@ -15,9 +15,9 @@
   <rect x="12" y="12" width="1096" height="726" rx="16" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1.5"/>
   <text x="36" y="46" font-size="16" font-weight="700" fill="#868e96" letter-spacing="2">YOUR DEV MACHINE</text>
 
-  <!-- AgentFence container -->
+  <!-- Fishbowl container -->
   <rect x="36" y="64" width="600" height="380" rx="14" fill="#fff" stroke="#e03131" stroke-width="3" stroke-dasharray="12 6" filter="url(#shadow)"/>
-  <text x="66" y="100" font-size="24" font-weight="800" fill="#e03131">AgentFence Container</text>
+  <text x="66" y="100" font-size="24" font-weight="800" fill="#e03131">Fishbowl Container</text>
   <text x="66" y="124" font-size="14" fill="#868e96" font-family="monospace">--cap-drop ALL   --read-only   --no-new-privileges</text>
 
   <!-- Agent box -->
@@ -72,7 +72,7 @@
   <!-- Session logs -->
   <rect x="36" y="484" width="1036" height="136" rx="14" fill="#f3f0ff" stroke="#7950f2" stroke-width="2" filter="url(#shadow)"/>
   <text x="66" y="520" font-size="24" font-weight="800" fill="#6741d9">Session Logs</text>
-  <text x="258" y="520" font-size="16" fill="#868e96">~/.agentfence/logs/session-&lt;timestamp&gt;/</text>
+  <text x="258" y="520" font-size="16" fill="#868e96">~/.fishbowl/logs/session-&lt;timestamp&gt;/</text>
   <text x="258" y="542" font-size="14" font-weight="600" fill="#9775fa">Persisted on the host — survives container teardown</text>
 
   <rect x="66" y="556" width="230" height="42" rx="8" fill="#e5dbff" stroke="#9775fa" stroke-width="1.5"/>
@@ -89,7 +89,7 @@
 
   <!-- Audit report -->
   <rect x="280" y="660" width="560" height="52" rx="12" fill="#7950f2" filter="url(#shadow)"/>
-  <text x="346" y="693" font-size="22" font-weight="800" fill="#fff">agentfence audit</text>
+  <text x="346" y="693" font-size="22" font-weight="800" fill="#fff">fishbowl audit</text>
   <text x="538" y="693" font-size="18" fill="#d0bfff">session report</text>
 
   <!-- Arrow: logs to audit -->

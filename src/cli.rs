@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "agentfence", version, about = "Docker launcher for AgentFence sessions")]
+#[command(name = "fishbowl", version, about = "Docker launcher for Fishbowl sessions")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -20,9 +20,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Build the AgentFence container image.
+    /// Build the Fishbowl container image.
     BuildImage(BuildImageArgs),
-    /// Run an interactive AgentFence container around a project.
+    /// Run an interactive Fishbowl container around a project.
     Run(RunArgs),
     /// Review the audit log from a session.
     Audit(AuditArgs),
@@ -35,7 +35,7 @@ enum Command {
 #[derive(Debug, Args)]
 struct BuildImageArgs {
     /// Docker image tag to build.
-    #[arg(long, default_value = "agentfence:dev")]
+    #[arg(long, default_value = "fishbowl:dev")]
     image: String,
 }
 
@@ -66,7 +66,7 @@ struct RunArgs {
     monitor: Option<MonitorMode>,
 
     /// Docker image tag to run.
-    #[arg(long, default_value = "agentfence:dev", hide = true)]
+    #[arg(long, default_value = "fishbowl:dev", hide = true)]
     image: String,
 
     /// Force a docker build before launch.
@@ -109,7 +109,7 @@ struct RunArgs {
     #[arg(long, hide = true)]
     ebpf_file: bool,
 
-    /// Skip reading .agentfence.toml from the project directory.
+    /// Skip reading .fishbowl.toml from the project directory.
     #[arg(long, hide = true)]
     no_config: bool,
 
@@ -246,17 +246,17 @@ pub fn run() -> Result<()> {
                 (args.ssh_mounts, args.cred_mounts, args.env_vars);
 
             // Project config mounts are never applied. The project repo is
-            // untrusted input — a malicious .agentfence.toml could request
+            // untrusted input — a malicious .fishbowl.toml could request
             // ~/.ssh/id_rsa or ~/.aws/credentials. Mounts always come from
             // explicit --mount flags on the CLI.
             if let Some(ref config) = project_config {
                 if !config.mounts.is_empty() {
                     println!(
-                        "[AgentFence] Project config requests mounts: {}",
+                        "[Fishbowl] Project config requests mounts: {}",
                         config.mounts.join(", ")
                     );
                     println!(
-                        "[AgentFence] NOT applied (project config is untrusted). Use --mount on the CLI instead."
+                        "[Fishbowl] NOT applied (project config is untrusted). Use --mount on the CLI instead."
                     );
                 }
             }

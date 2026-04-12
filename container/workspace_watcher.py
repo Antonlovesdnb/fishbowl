@@ -8,13 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-WORKSPACE = Path(os.getenv("AGENTFENCE_WORKSPACE", "/workspace"))
-REGISTRY_PATH = Path("/var/log/agentfence/watcher/registry.json")
-AUDIT_PATH = Path("/var/log/agentfence/watcher/audit.jsonl")
-AUDIT_BIN = "/usr/local/bin/agentfence-audit"
-REGISTRY_BIN = "/usr/local/bin/agentfence-registry"
+WORKSPACE = Path(os.getenv("FISHBOWL_WORKSPACE", "/workspace"))
+REGISTRY_PATH = Path("/var/log/fishbowl/watcher/registry.json")
+AUDIT_PATH = Path("/var/log/fishbowl/watcher/audit.jsonl")
+AUDIT_BIN = "/usr/local/bin/fishbowl-audit"
+REGISTRY_BIN = "/usr/local/bin/fishbowl-registry"
 ALERT_PATH = "/proc/1/fd/2"
-DISABLE_FILE_ACCESS_AUDIT = os.getenv("AGENTFENCE_DISABLE_FILE_ACCESS_AUDIT", "0") == "1"
+DISABLE_FILE_ACCESS_AUDIT = os.getenv("FISHBOWL_DISABLE_FILE_ACCESS_AUDIT", "0") == "1"
 IGNORED_PARTS = {".git", "node_modules", "target", ".venv", "dist", "build"}
 MAX_SCAN_BYTES = 1024 * 1024
 ALLOWED_SUFFIXES = {".env", ".json", ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg", ".pem", ".key", ".tfvars"}
@@ -195,7 +195,7 @@ def emit_alert(severity: str, message: str) -> None:
         return
     try:
         with open(ALERT_PATH, "w") as fh:
-            fh.write(f"[AgentFence] {severity.upper()}: {message}\n")
+            fh.write(f"[Fishbowl] {severity.upper()}: {message}\n")
     except OSError:
         pass
 
@@ -209,7 +209,7 @@ def emit_discovery_event(path: Path, classification: str, fields: list[str]) -> 
         "pid": os.getpid(),
         "ppid": os.getppid(),
         "cwd": os.getcwd(),
-        "agent": os.getenv("AGENTFENCE_AGENT", "shell"),
+        "agent": os.getenv("FISHBOWL_AGENT", "shell"),
         "command": None,
         "variable": None,
         "old_value": None,
@@ -351,7 +351,7 @@ def emit_access_event(path: Path, event_name: str, process_cache: dict[str, tupl
         "pid": os.getpid(),
         "ppid": os.getppid(),
         "cwd": os.getcwd(),
-        "agent": os.getenv("AGENTFENCE_AGENT", "shell"),
+        "agent": os.getenv("FISHBOWL_AGENT", "shell"),
         "command": None,
         "variable": None,
         "old_value": None,

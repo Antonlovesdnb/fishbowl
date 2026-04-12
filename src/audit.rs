@@ -74,7 +74,7 @@ pub fn run_check(session_dir: Option<PathBuf>, fail_on: &str) -> Result<()> {
     // Config sync-back changes = medium severity (already counted in audit events)
 
     // Print summary
-    println!("AgentFence Check");
+    println!("Fishbowl Check");
     println!("Session:  {}", logs_dir.display());
     println!("Threshold: --fail-on {fail_on}");
     println!();
@@ -115,7 +115,7 @@ fn severity_level(severity: &str) -> usize {
 
 fn find_latest_session() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
-    let latest = home.join(".agentfence").join("logs").join("latest");
+    let latest = home.join(".fishbowl").join("logs").join("latest");
     if latest.exists() {
         let resolved = fs::read_link(&latest).unwrap_or(latest.clone());
         if resolved.is_dir() {
@@ -123,7 +123,7 @@ fn find_latest_session() -> Result<PathBuf> {
         }
     }
 
-    let logs_root = home.join(".agentfence").join("logs");
+    let logs_root = home.join(".fishbowl").join("logs");
     if !logs_root.is_dir() {
         anyhow::bail!("no session logs found in {}", logs_root.display());
     }
@@ -176,7 +176,7 @@ fn print_report(logs_dir: &Path, events: &[Value], registry: &Value, findings: &
         .find_map(|e| e.get("agent").and_then(Value::as_str))
         .unwrap_or("shell");
 
-    println!("AgentFence Audit Report");
+    println!("Fishbowl Audit Report");
     println!("Session: {}", logs_dir.display());
     println!("Agent:   {agent}");
     println!();

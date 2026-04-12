@@ -16,7 +16,7 @@ echo "[test-audit] triggering env mutation and enumeration"
 cargo run -- run \
   --project "$ROOT_DIR" \
   --logs-dir "$LOG_DIR" \
-  --name agentfence-audit-test \
+  --name fishbowl-audit-test \
   -- \
   /bin/bash -lc \
   'export PAGER=/tmp/payload.sh; printenv >/dev/null'

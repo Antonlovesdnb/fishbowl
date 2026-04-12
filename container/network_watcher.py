@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Outbound network connection monitor for AgentFence containers.
+"""Outbound network connection monitor for Fishbowl containers.
 
 Polls ss for TCP and UDP connections, correlates with the credential
 registry, writes audit events directly to the JSONL log, and emits
@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-AUDIT_PATH = Path("/var/log/agentfence/watcher/audit.jsonl")
-REGISTRY_PATH = Path("/var/log/agentfence/watcher/registry.json")
+AUDIT_PATH = Path("/var/log/fishbowl/watcher/audit.jsonl")
+REGISTRY_PATH = Path("/var/log/fishbowl/watcher/registry.json")
 POLL_INTERVAL = 0.05  # 50ms
 SEEN_MAX_AGE = 60  # prune entries older than 60s
 ALERT_PATH = "/proc/1/fd/2"
@@ -62,7 +62,7 @@ def emit_alert(severity: str, message: str) -> None:
     if severity not in {"medium", "high", "critical"}:
         return
     tag = severity.upper()
-    line = f"[AgentFence] {tag}: {message}\n"
+    line = f"[Fishbowl] {tag}: {message}\n"
     try:
         with open(ALERT_PATH, "w") as fh:
             fh.write(line)
@@ -253,7 +253,7 @@ def emit_connection_event(connection: dict, active_credential_count: int) -> Non
         "pid": os.getpid(),
         "ppid": os.getppid(),
         "cwd": os.getcwd(),
-        "agent": os.getenv("AGENTFENCE_AGENT", "shell"),
+        "agent": os.getenv("FISHBOWL_AGENT", "shell"),
         "command": None,
         "variable": None,
         "old_value": None,

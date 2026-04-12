@@ -16,12 +16,12 @@
 
   <rect x="0" y="0" width="1100" height="320" rx="12" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
 
-  <text x="550" y="34" font-size="20" font-weight="800" fill="#495057" text-anchor="middle">CI/CD Pipeline with AgentFence</text>
+  <text x="550" y="34" font-size="20" font-weight="800" fill="#495057" text-anchor="middle">CI/CD Pipeline with Fishbowl</text>
 
   <!-- Step 1: Agent task -->
   <rect x="30" y="60" width="200" height="100" rx="10" fill="#edf2ff" stroke="#4263eb" stroke-width="1.5" filter="url(#shadow)"/>
   <text x="130" y="92" font-size="16" font-weight="700" fill="#364fc7" text-anchor="middle">Agent Task</text>
-  <text x="130" y="116" font-size="13" fill="#868e96" text-anchor="middle">agentfence run</text>
+  <text x="130" y="116" font-size="13" fill="#868e96" text-anchor="middle">fishbowl run</text>
   <text x="130" y="136" font-size="13" fill="#868e96" text-anchor="middle">-- codex "deploy"</text>
 
   <path d="M 230 110 L 262 110" stroke="#868e96" stroke-width="2" marker-end="url(#arrow)"/>
@@ -37,7 +37,7 @@
   <!-- Step 3: Check -->
   <rect x="494" y="60" width="200" height="100" rx="10" fill="#f3f0ff" stroke="#7950f2" stroke-width="1.5" filter="url(#shadow)"/>
   <text x="594" y="92" font-size="16" font-weight="700" fill="#6741d9" text-anchor="middle">Security Check</text>
-  <text x="594" y="116" font-size="13" fill="#868e96" text-anchor="middle">agentfence check</text>
+  <text x="594" y="116" font-size="13" fill="#868e96" text-anchor="middle">fishbowl check</text>
   <text x="594" y="136" font-size="13" fill="#868e96" text-anchor="middle">--fail-on high</text>
 
   <!-- Branch: Pass -->
@@ -59,7 +59,7 @@
   <text x="1005" y="148" font-size="12" fill="#e03131" text-anchor="middle">Slack / PagerDuty</text>
 
   <!-- What it catches -->
-  <text x="30" y="210" font-size="16" font-weight="700" fill="#495057">What agentfence check catches:</text>
+  <text x="30" y="210" font-size="16" font-weight="700" fill="#495057">What fishbowl check catches:</text>
 
   <rect x="30" y="224" width="250" height="36" rx="6" fill="#fff5f5"/>
   <text x="155" y="248" font-size="13" fill="#c92a2a" text-anchor="middle">curl/wget reading credential files</text>

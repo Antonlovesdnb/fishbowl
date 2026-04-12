@@ -19,10 +19,10 @@ cargo run -- run \
   --project "$ROOT_DIR" \
   --mount "$TMP_DIR/demo.key" \
   --logs-dir "$LOG_DIR" \
-  --name agentfence-network-test \
+  --name fishbowl-network-test \
   -- \
   /bin/bash -lc \
-  'sleep 1; python3 - /agentfence/creds/demo.key <<'"'"'PY'"'"'
+  'sleep 1; python3 - /fishbowl/creds/demo.key <<'"'"'PY'"'"'
 import socket
 import sys
 import time
@@ -52,7 +52,7 @@ cat "$LOG_DIR/audit.jsonl"
 
 grep -q '"event":"network_egress"' "$LOG_DIR/audit.jsonl"
 grep -q '"destination_port":"80"' "$LOG_DIR/audit.jsonl"
-grep -q '"matched_registry_ids":"file::/agentfence/creds/demo.key"' "$LOG_DIR/audit.jsonl"
+grep -q '"matched_registry_ids":"file::/fishbowl/creds/demo.key"' "$LOG_DIR/audit.jsonl"
 grep -q '"severity":"critical"' "$LOG_DIR/audit.jsonl"
 grep -q '"process_name":"python3"' "$LOG_DIR/audit.jsonl"
 grep -q '"expected_destinations"' "$LOG_DIR/registry.json"

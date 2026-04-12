@@ -87,18 +87,18 @@ impl MonitoringPlan {
     pub fn startup_notice(self) -> Option<String> {
         match self.backend {
             MonitoringBackend::ContainerLocal if self.request.any_host_collectors() => Some(format!(
-                "[AgentFence] Strong host monitoring is unavailable on {}. Running with container-local telemetry only.",
+                "[Fishbowl] Strong host monitoring is unavailable on {}. Running with container-local telemetry only.",
                 env::consts::OS
             )),
             MonitoringBackend::DockerVmHelper => {
                 let provider = detect_docker_provider();
                 Some(format!(
-                    "[AgentFence] Selected Docker-in-VM helper monitoring backend ({}).",
+                    "[Fishbowl] Selected Docker-in-VM helper monitoring backend ({}).",
                     provider.display_name()
                 ))
             }
             MonitoringBackend::LinuxHostEbpf => Some(
-                "[AgentFence] Strong host monitoring enabled with Linux eBPF collectors.".to_string(),
+                "[Fishbowl] Strong host monitoring enabled with Linux eBPF collectors.".to_string(),
             ),
             _ => None,
         }
@@ -215,7 +215,7 @@ fn run_with_linux_ebpf_helper(
     thread::sleep(Duration::from_millis(750));
     if let Some(probe_failures) = scan_collector_attach_failures(logs_dir, request) {
         eprintln!(
-            "[AgentFence] WARNING: strong host monitoring is degraded.\n{probe_failures}\n[AgentFence] Continuing with whatever telemetry is available; check the ebpf_*.stderr.log files in the session directory."
+            "[Fishbowl] WARNING: strong host monitoring is degraded.\n{probe_failures}\n[Fishbowl] Continuing with whatever telemetry is available; check the ebpf_*.stderr.log files in the session directory."
         );
     }
 
@@ -369,12 +369,12 @@ fn handle_helper_failure(
 ) -> Result<ExitStatus> {
     if mode == MonitorMode::Auto {
         eprintln!(
-            "[AgentFence] {headline} ({detail}); falling back to container-local telemetry."
+            "[Fishbowl] {headline} ({detail}); falling back to container-local telemetry."
         );
         if let Some(logs) = helper_logs {
             let trimmed = logs.trim();
             if !trimmed.is_empty() {
-                eprintln!("[AgentFence] Helper logs:\n{trimmed}");
+                eprintln!("[Fishbowl] Helper logs:\n{trimmed}");
             }
         }
         run_container_local(docker_command)
@@ -418,7 +418,7 @@ fn spawn_linux_ebpf_helper(
 ) -> Result<Child> {
     ensure_sudo_session()?;
 
-    let current_exe = env::current_exe().context("failed to resolve current agentfence binary")?;
+    let current_exe = env::current_exe().context("failed to resolve current fishbowl binary")?;
     let mut command = Command::new("sudo");
     command
         .arg("-n")
@@ -454,7 +454,7 @@ fn spawn_linux_ebpf_helper(
     command.stdout(Stdio::from(stdout_log));
     command.stderr(Stdio::from(stderr_log));
 
-    println!("[AgentFence] Starting privileged host eBPF helper via sudo.");
+    println!("[Fishbowl] Starting privileged host eBPF helper via sudo.");
 
     command
         .spawn()
@@ -493,13 +493,13 @@ fn spawn_docker_vm_helper_container(
     logs_dir: &Path,
     request: MonitoringRequest,
 ) -> Result<DockerVmHelperHandle> {
-    let helper_name = format!("{target_container_name}-agentfence-vm-helper");
+    let helper_name = format!("{target_container_name}-fishbowl-vm-helper");
     let helper_image = collector_image_tag(image);
     let requested = requested_collectors(request);
 
     if !docker_image_present(&helper_image) {
         bail!(
-            "collector image `{}` not found locally. Run `agentfence build-image` first to build it on this host (images must be built per host architecture).",
+            "collector image `{}` not found locally. Run `fishbowl build-image` first to build it on this host (images must be built per host architecture).",
             helper_image
         );
     }
@@ -552,7 +552,7 @@ fn spawn_docker_vm_helper_container(
     }
 
     println!(
-        "[AgentFence] Starting Docker-in-VM helper container for collectors: {}.",
+        "[Fishbowl] Starting Docker-in-VM helper container for collectors: {}.",
         requested
     );
     let output = command
@@ -573,7 +573,7 @@ fn spawn_docker_vm_helper_container(
 
 fn stop_docker_vm_helper(helper: &mut DockerVmHelperHandle) {
     // `docker rm -f` SIGKILLs PID 1 of the helper container (the
-    // `agentfence collect-ebpf` process), which gives bpftrace zero time to
+    // `fishbowl collect-ebpf` process), which gives bpftrace zero time to
     // flush its libc stdio buffers or drain remaining perf-ring entries — so
     // ebpf_*.jsonl files end up missing the most recent events. `docker stop`
     // sends SIGTERM and waits before escalating; combined with the SIGINT

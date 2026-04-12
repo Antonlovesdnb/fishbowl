@@ -21,6 +21,6 @@ RUN apk add --no-cache \
     iproute2 \
     jq
 
-COPY --from=builder /src/target/release/agentfence /usr/local/bin/agentfence
+COPY --from=builder /src/target/release/fishbowl /usr/local/bin/fishbowl
 
-ENTRYPOINT ["/usr/local/bin/agentfence"]
+ENTRYPOINT ["/usr/local/bin/fishbowl"]

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-if [[ -n "${AGENTFENCE_BASH_HOOK_LOADED:-}" ]]; then
+if [[ -n "${FISHBOWL_BASH_HOOK_LOADED:-}" ]]; then
   return 0 2>/dev/null || exit 0
 fi
 
-AGENTFENCE_BASH_HOOK_LOADED=1
-AGENTFENCE_AUDIT_BIN="${AGENTFENCE_AUDIT_BIN:-/usr/local/bin/agentfence-audit}"
-AGENTFENCE_REGISTRY_BIN="${AGENTFENCE_REGISTRY_BIN:-/usr/local/bin/agentfence-registry}"
-AGENTFENCE_DANGEROUS_VARS=(
+FISHBOWL_BASH_HOOK_LOADED=1
+FISHBOWL_AUDIT_BIN="${FISHBOWL_AUDIT_BIN:-/usr/local/bin/fishbowl-audit}"
+FISHBOWL_REGISTRY_BIN="${FISHBOWL_REGISTRY_BIN:-/usr/local/bin/fishbowl-registry}"
+FISHBOWL_DANGEROUS_VARS=(
   PAGER
   GIT_ASKPASS
   EDITOR
@@ -25,7 +25,7 @@ AGENTFENCE_DANGEROUS_VARS=(
   NPM_CONFIG_REGISTRY
   PIP_INDEX_URL
 )
-AGENTFENCE_KNOWN_CREDENTIAL_VARS=(
+FISHBOWL_KNOWN_CREDENTIAL_VARS=(
   AWS_SECRET_ACCESS_KEY
   AWS_ACCESS_KEY_ID
   GH_TOKEN
@@ -37,15 +37,15 @@ AGENTFENCE_KNOWN_CREDENTIAL_VARS=(
   SPLUNK_PASSWORD
 )
 
-agentfence_audit() {
-  "$AGENTFENCE_AUDIT_BIN" "$@" >/dev/null 2>&1 || true
+fishbowl_audit() {
+  "$FISHBOWL_AUDIT_BIN" "$@" >/dev/null 2>&1 || true
 }
 
-agentfence_registry() {
-  "$AGENTFENCE_REGISTRY_BIN" "$@" >/dev/null 2>&1 || true
+fishbowl_registry() {
+  "$FISHBOWL_REGISTRY_BIN" "$@" >/dev/null 2>&1 || true
 }
 
-agentfence_redact_value_into() {
+fishbowl_redact_value_into() {
   local target="$1"
   local value="$2"
   local length="${#value}"
@@ -60,28 +60,28 @@ agentfence_redact_value_into() {
   printf -v "$target" '%s' "$redacted"
 }
 
-agentfence_store_env_baseline() {
+fishbowl_store_env_baseline() {
   local var baseline_name
-  for var in "${AGENTFENCE_DANGEROUS_VARS[@]}"; do
-    baseline_name="__agentfence_env_${var}"
+  for var in "${FISHBOWL_DANGEROUS_VARS[@]}"; do
+    baseline_name="__fishbowl_env_${var}"
     printf -v "$baseline_name" '%s' "${!var-}"
   done
 }
 
-agentfence_track_env_changes() {
+fishbowl_track_env_changes() {
   local var old_value new_value baseline_name old_redacted new_redacted
-  for var in "${AGENTFENCE_DANGEROUS_VARS[@]}"; do
-    baseline_name="__agentfence_env_${var}"
+  for var in "${FISHBOWL_DANGEROUS_VARS[@]}"; do
+    baseline_name="__fishbowl_env_${var}"
     old_value="${!baseline_name-}"
     new_value="${!var-}"
 
     if [[ "$old_value" != "$new_value" ]]; then
-      agentfence_redact_value_into old_redacted "$old_value"
-      agentfence_redact_value_into new_redacted "$new_value"
-      agentfence_audit \
+      fishbowl_redact_value_into old_redacted "$old_value"
+      fishbowl_redact_value_into new_redacted "$new_value"
+      fishbowl_audit \
         --event dangerous_env_mutation \
         --severity medium \
-        --command "${AGENTFENCE_LAST_COMMAND:-}" \
+        --command "${FISHBOWL_LAST_COMMAND:-}" \
         --variable "$var" \
         --old-value "$old_redacted" \
         --new-value "$new_redacted" \
@@ -92,11 +92,11 @@ agentfence_track_env_changes() {
   done
 }
 
-agentfence_is_credential_var() {
+fishbowl_is_credential_var() {
   local candidate="$1"
   local known
 
-  for known in "${AGENTFENCE_KNOWN_CREDENTIAL_VARS[@]}"; do
+  for known in "${FISHBOWL_KNOWN_CREDENTIAL_VARS[@]}"; do
     if [[ "$candidate" == "$known" ]]; then
       return 0
     fi
@@ -111,7 +111,7 @@ agentfence_is_credential_var() {
   return 1
 }
 
-agentfence_classify_var() {
+fishbowl_classify_var() {
   local candidate="$1"
 
   case "$candidate" in
@@ -154,7 +154,7 @@ agentfence_classify_var() {
   esac
 }
 
-agentfence_register_discovered_var() {
+fishbowl_register_discovered_var() {
   local var="$1"
   local value="$2"
   local command="${3:-}"
@@ -164,26 +164,26 @@ agentfence_register_discovered_var() {
     return
   fi
 
-  if ! agentfence_is_credential_var "$var"; then
+  if ! fishbowl_is_credential_var "$var"; then
     return
   fi
 
-  classification="$(agentfence_classify_var "$var")"
-  baseline_name="__agentfence_discovered_${var}"
+  classification="$(fishbowl_classify_var "$var")"
+  baseline_name="__fishbowl_discovered_${var}"
   previous_value="${!baseline_name-}"
 
   if [[ "$previous_value" == "$value" ]]; then
     return
   fi
 
-  agentfence_registry \
+  fishbowl_registry \
     --env-var "$var" \
     --value "$value" \
     --classification "$classification" \
     --discovery-method env_watch \
     --command "$command"
 
-  agentfence_audit \
+  fishbowl_audit \
     --event credential_discovered \
     --severity info \
     --command "$command" \
@@ -196,16 +196,16 @@ agentfence_register_discovered_var() {
   printf -v "$baseline_name" '%s' "$value"
 }
 
-agentfence_discover_env_credentials() {
+fishbowl_discover_env_credentials() {
   local var
   while IFS='=' read -r var _; do
-    if agentfence_is_credential_var "$var"; then
-      agentfence_register_discovered_var "$var" "${!var-}" "${AGENTFENCE_LAST_COMMAND:-}"
+    if fishbowl_is_credential_var "$var"; then
+      fishbowl_register_discovered_var "$var" "${!var-}" "${FISHBOWL_LAST_COMMAND:-}"
     fi
   done < <(env)
 }
 
-agentfence_extract_assignment_value() {
+fishbowl_extract_assignment_value() {
   local command="$1"
   local var="$2"
   local value=""
@@ -232,19 +232,19 @@ agentfence_extract_assignment_value() {
   printf '%s' "$value"
 }
 
-agentfence_preexec() {
+fishbowl_preexec() {
   local var old_value new_value old_redacted new_redacted assigned_value
-  AGENTFENCE_LAST_COMMAND="$BASH_COMMAND"
+  FISHBOWL_LAST_COMMAND="$BASH_COMMAND"
 
   case "$BASH_COMMAND" in
-    agentfence_*|__bp_*|history*|builtin\ trap*|trap\ *|PROMPT_COMMAND=* )
+    fishbowl_*|__bp_*|history*|builtin\ trap*|trap\ *|PROMPT_COMMAND=* )
       return
       ;;
   esac
 
   case "$BASH_COMMAND" in
     env|env\ *|printenv|printenv\ *|set|set\ *)
-      agentfence_audit \
+      fishbowl_audit \
         --event env_enumeration \
         --severity low \
         --command "$BASH_COMMAND" \
@@ -252,7 +252,7 @@ agentfence_preexec() {
       ;;
   esac
 
-  for var in "${AGENTFENCE_DANGEROUS_VARS[@]}"; do
+  for var in "${FISHBOWL_DANGEROUS_VARS[@]}"; do
     old_value="${!var-}"
     new_value=""
 
@@ -273,10 +273,10 @@ agentfence_preexec() {
         ;;
     esac
 
-    agentfence_redact_value_into old_redacted "$old_value"
-    agentfence_redact_value_into new_redacted "$new_value"
+    fishbowl_redact_value_into old_redacted "$old_value"
+    fishbowl_redact_value_into new_redacted "$new_value"
 
-    agentfence_audit \
+    fishbowl_audit \
       --event dangerous_env_mutation \
       --severity medium \
       --command "$BASH_COMMAND" \
@@ -288,39 +288,39 @@ agentfence_preexec() {
 
   case "$BASH_COMMAND" in
     export\ *=*|*=*)
-      for var in "${AGENTFENCE_KNOWN_CREDENTIAL_VARS[@]}"; do
-        assigned_value="$(agentfence_extract_assignment_value "$BASH_COMMAND" "$var")"
+      for var in "${FISHBOWL_KNOWN_CREDENTIAL_VARS[@]}"; do
+        assigned_value="$(fishbowl_extract_assignment_value "$BASH_COMMAND" "$var")"
         if [[ -n "$assigned_value" ]]; then
-          agentfence_register_discovered_var "$var" "$assigned_value" "$BASH_COMMAND"
+          fishbowl_register_discovered_var "$var" "$assigned_value" "$BASH_COMMAND"
         fi
       done
 
       if [[ "$BASH_COMMAND" =~ ^export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)= ]] || [[ "$BASH_COMMAND" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
         var="${BASH_REMATCH[1]}"
-        assigned_value="$(agentfence_extract_assignment_value "$BASH_COMMAND" "$var")"
+        assigned_value="$(fishbowl_extract_assignment_value "$BASH_COMMAND" "$var")"
         if [[ -n "$assigned_value" ]]; then
-          agentfence_register_discovered_var "$var" "$assigned_value" "$BASH_COMMAND"
+          fishbowl_register_discovered_var "$var" "$assigned_value" "$BASH_COMMAND"
         fi
       fi
       ;;
   esac
 }
 
-agentfence_precmd() {
-  agentfence_track_env_changes
-  agentfence_discover_env_credentials
+fishbowl_precmd() {
+  fishbowl_track_env_changes
+  fishbowl_discover_env_credentials
 }
 
-agentfence_install_hooks() {
-  agentfence_store_env_baseline
+fishbowl_install_hooks() {
+  fishbowl_store_env_baseline
 
   if [[ -n "${PROMPT_COMMAND:-}" ]]; then
-    PROMPT_COMMAND="agentfence_precmd; ${PROMPT_COMMAND}"
+    PROMPT_COMMAND="fishbowl_precmd; ${PROMPT_COMMAND}"
   else
-    PROMPT_COMMAND="agentfence_precmd"
+    PROMPT_COMMAND="fishbowl_precmd"
   fi
 
-  trap 'agentfence_preexec' DEBUG
+  trap 'fishbowl_preexec' DEBUG
 }
 
-agentfence_install_hooks
+fishbowl_install_hooks

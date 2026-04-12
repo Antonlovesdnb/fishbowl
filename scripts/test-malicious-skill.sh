@@ -8,14 +8,14 @@ if [ "${1:-}" = "--install" ]; then
 fi
 
 PROJECT_DIR="${1:-/home/anton/Desktop/claudeforblueteam}"
-AGENTFENCE_BIN="${AGENTFENCE_BIN:-agentfence}"
-MONITOR="${AGENTFENCE_MONITOR:-strong}"
-NETWORK="${AGENTFENCE_NETWORK:-host}"
-CONTAINER_NAME="${AGENTFENCE_CONTAINER_NAME:-agentfence-malicious-skill-test}"
-LOG_DIR="${AGENTFENCE_LOG_DIR:-$(mktemp -d)}"
+FISHBOWL_BIN="${FISHBOWL_BIN:-fishbowl}"
+MONITOR="${FISHBOWL_MONITOR:-strong}"
+NETWORK="${FISHBOWL_NETWORK:-host}"
+CONTAINER_NAME="${FISHBOWL_CONTAINER_NAME:-fishbowl-malicious-skill-test}"
+LOG_DIR="${FISHBOWL_LOG_DIR:-$(mktemp -d)}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PAYLOAD_SOURCE="$ROOT_DIR/scripts/fake-malicious-skill.py"
-PAYLOAD_TARGET="$PROJECT_DIR/.agentfence/fake-malicious-skill.py"
+PAYLOAD_TARGET="$PROJECT_DIR/.fishbowl/fake-malicious-skill.py"
 
 cleanup() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -25,12 +25,12 @@ trap cleanup EXIT
 chmod 777 "$LOG_DIR"
 
 install_payload() {
-  mkdir -p "$PROJECT_DIR/.agentfence"
+  mkdir -p "$PROJECT_DIR/.fishbowl"
   cp "$PAYLOAD_SOURCE" "$PAYLOAD_TARGET"
   chmod 755 "$PAYLOAD_TARGET"
   echo "[test-malicious-skill] installed payload: $PAYLOAD_TARGET"
-  echo "[test-malicious-skill] run inside AgentFence with:"
-  echo "  python3 \"\${AGENTFENCE_WORKSPACE:-/workspace}/.agentfence/fake-malicious-skill.py\""
+  echo "[test-malicious-skill] run inside Fishbowl with:"
+  echo "  python3 \"\${FISHBOWL_WORKSPACE:-/workspace}/.fishbowl/fake-malicious-skill.py\""
 }
 
 if [ "$MODE" = "install" ]; then
@@ -46,7 +46,7 @@ echo "[test-malicious-skill] monitor: $MONITOR"
 echo "[test-malicious-skill] network: $NETWORK"
 echo "[test-malicious-skill] running controlled fake exfiltration"
 
-"$AGENTFENCE_BIN" run "$PROJECT_DIR" \
+"$FISHBOWL_BIN" run "$PROJECT_DIR" \
   --monitor "$MONITOR" \
   --network "$NETWORK" \
   --logs-dir "$LOG_DIR" \
@@ -54,7 +54,7 @@ echo "[test-malicious-skill] running controlled fake exfiltration"
   -- \
   /bin/bash -lc '
 set -euo pipefail
-python3 "${AGENTFENCE_WORKSPACE:-/workspace}/.agentfence/fake-malicious-skill.py"
+python3 "${FISHBOWL_WORKSPACE:-/workspace}/.fishbowl/fake-malicious-skill.py"
 '
 
 echo "[test-malicious-skill] relevant audit events"

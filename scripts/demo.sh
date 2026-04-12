@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────
-# AgentFence end-to-end demo
+# Fishbowl end-to-end demo
 #
-# Creates a demo project, runs AgentFence with strong monitoring,
+# Creates a demo project, runs Fishbowl with strong monitoring,
 # exercises every collector, then shows the audit report.
 #
 # Usage:
@@ -15,7 +15,7 @@ set -euo pipefail
 PAUSE=false
 [ "${1:-}" = "--pause" ] && PAUSE=true
 
-DEMO_DIR="$HOME/agentfence-demo"
+DEMO_DIR="$HOME/fishbowl-demo"
 CRED_FILE="$HOME/demo-api-key.txt"
 
 banner() {
@@ -64,17 +64,17 @@ echo "[demo]   README.md referencing GH_TOKEN and AWS_SECRET_ACCESS_KEY"
 echo "[demo]   Git remote: github.com (will trigger SSH key prompt)"
 echo "[demo] Created credential file at $CRED_FILE"
 
-# ── Step 2: Run AgentFence ───────────────────────────────────────
-banner "Step 2: Running AgentFence with strong monitoring"
+# ── Step 2: Run Fishbowl ───────────────────────────────────────
+banner "Step 2: Running Fishbowl with strong monitoring"
 
 echo "[demo] Command:"
-echo "  agentfence run --mount $CRED_FILE $DEMO_DIR -- /bin/bash -lc '...'"
+echo "  fishbowl run --mount $CRED_FILE $DEMO_DIR -- /bin/bash -lc '...'"
 echo ""
 
-agentfence run --mount "$CRED_FILE" "$DEMO_DIR" -- /bin/bash -lc '
+fishbowl run --mount "$CRED_FILE" "$DEMO_DIR" -- /bin/bash -lc '
   echo ""
   echo "┌──────────────────────────────────────────────────────────┐"
-  echo "│  Inside the AgentFence container                        │"
+  echo "│  Inside the Fishbowl container                        │"
   echo "└──────────────────────────────────────────────────────────┘"
   echo ""
 
@@ -88,7 +88,7 @@ agentfence run --mount "$CRED_FILE" "$DEMO_DIR" -- /bin/bash -lc '
   echo ""
 
   echo "[demo] === Read mounted credential (triggers file collector) ==="
-  cat /agentfence/creds/demo-api-key.txt
+  cat /fishbowl/creds/demo-api-key.txt
   echo ""
 
   echo "[demo] === Mutate a dangerous env var (triggers env audit) ==="
@@ -112,7 +112,7 @@ agentfence run --mount "$CRED_FILE" "$DEMO_DIR" -- /bin/bash -lc '
   echo ""
 
   echo "[demo] === eBPF logs are tamper-proof (parent dir is RO) ==="
-  touch /var/log/agentfence/tamper-test 2>&1 || echo "eBPF logs protected"
+  touch /var/log/fishbowl/tamper-test 2>&1 || echo "eBPF logs protected"
   echo ""
 
   echo "[demo] Done! Exiting container."
@@ -121,12 +121,12 @@ agentfence run --mount "$CRED_FILE" "$DEMO_DIR" -- /bin/bash -lc '
 # ── Step 3: Show audit report ────────────────────────────────────
 banner "Step 3: Session audit report"
 
-agentfence audit
+fishbowl audit
 
 # ── Step 4: Show session files ───────────────────────────────────
 banner "Step 4: Session log contents"
 
-SESSION=$(ls -td ~/.agentfence/logs/session-* 2>/dev/null | head -1)
+SESSION=$(ls -td ~/.fishbowl/logs/session-* 2>/dev/null | head -1)
 if [ -z "$SESSION" ]; then
   echo "[demo] No session found"
   exit 1
@@ -166,7 +166,7 @@ echo ""
 
 echo "── host_scan.json NOT in container mount ──"
 if [ ! -f "$SESSION/host_scan.json" ]; then
-  echo "  PASS: host_scan.json relocated to ~/.agentfence/host-scans/"
+  echo "  PASS: host_scan.json relocated to ~/.fishbowl/host-scans/"
 else
   echo "  FAIL: host_scan.json still in session dir"
 fi
@@ -174,5 +174,5 @@ echo ""
 
 banner "Demo complete"
 echo "Full session logs: $SESSION"
-echo "Host scan report:  ~/.agentfence/host-scans/"
+echo "Host scan report:  ~/.fishbowl/host-scans/"
 echo ""

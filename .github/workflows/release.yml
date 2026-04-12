@@ -67,10 +67,10 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ github.event.inputs.tag || github.ref_name }}"
-          NAME="agentfence-${VERSION}-${{ matrix.target }}"
+          NAME="fishbowl-${VERSION}-${{ matrix.target }}"
           mkdir -p "dist/${NAME}"
-          cp "target/${{ matrix.target }}/release/agentfence" "dist/${NAME}/"
-          cp README.md AgentFence.md "dist/${NAME}/" 2>/dev/null || true
+          cp "target/${{ matrix.target }}/release/fishbowl" "dist/${NAME}/"
+          cp README.md Fishbowl.md "dist/${NAME}/" 2>/dev/null || true
           tar -czf "dist/${NAME}.tar.gz" -C dist "${NAME}"
           rm -rf "dist/${NAME}"
           echo "archive=dist/${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
@@ -82,14 +82,14 @@ jobs:
         run: |
           set -euo pipefail
           ARCH="$(uname -m)"
-          docker build -f container/Collector.Dockerfile -t agentfence-collector:dev .
-          docker save agentfence-collector:dev | gzip > "dist/agentfence-collector-linux-${ARCH}.tar.gz"
-          echo "collector=dist/agentfence-collector-linux-${ARCH}.tar.gz" >> "$GITHUB_OUTPUT"
+          docker build -f container/Collector.Dockerfile -t fishbowl-collector:dev .
+          docker save fishbowl-collector:dev | gzip > "dist/fishbowl-collector-linux-${ARCH}.tar.gz"
+          echo "collector=dist/fishbowl-collector-linux-${ARCH}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: agentfence-${{ matrix.target }}
+          name: fishbowl-${{ matrix.target }}
           path: |
             ${{ steps.package.outputs.archive }}
             ${{ steps.collector.outputs.collector }}

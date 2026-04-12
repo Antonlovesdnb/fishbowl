@@ -6,8 +6,8 @@ if [[ -f /etc/bash/bashrc ]]; then
   source /etc/bash/bashrc
 fi
 
-export AGENTFENCE_HOME="${AGENTFENCE_HOME:-/agentfence/home}"
-export HOME="${HOME:-${AGENTFENCE_HOME}}"
+export FISHBOWL_HOME="${FISHBOWL_HOME:-/fishbowl/home}"
+export HOME="${HOME:-${FISHBOWL_HOME}}"
 export PATH="${HOME}/.local/bin:${PATH}"
 
-source /agentfence/bash_env.sh
+source /fishbowl/bash_env.sh

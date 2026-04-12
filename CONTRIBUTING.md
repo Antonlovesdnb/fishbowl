@@ -1,17 +1,17 @@
-# Contributing to AgentFence
+# Contributing to Fishbowl
 
 ## Getting started
 
 ```bash
-git clone https://github.com/Antonlovesdnb/AgentFence.git
-cd AgentFence
+git clone https://github.com/Antonlovesdnb/Fishbowl.git
+cd Fishbowl
 
 # Option 1: compile-check without installing Rust (uses Docker)
 docker run --rm -v "$PWD":/src -w /src rust:slim cargo check
 
 # Option 2: full local build
 cargo install --path .
-agentfence build-image
+fishbowl build-image
 ```
 
 You need a container runtime (Docker Desktop, Colima, OrbStack, or Rancher Desktop) for testing.
@@ -33,7 +33,7 @@ See [AGENTS.md](AGENTS.md) for the file layout and [CLAUDE.md](CLAUDE.md) for de
 
 ## Key conventions
 
-- **Observation-only.** AgentFence audits, it doesn't block. Don't add enforcement.
+- **Observation-only.** Fishbowl audits, it doesn't block. Don't add enforcement.
 - **Project content is untrusted.** Nothing from the repo should silently import host credentials. See the trust boundary rules in CLAUDE.md.
 - **Credential values are never intentionally logged.** Env var previews show first 4 chars + length only.
 - **Minimal CLI surface.** Hide power-user flags. New features should auto-detect or live in config.

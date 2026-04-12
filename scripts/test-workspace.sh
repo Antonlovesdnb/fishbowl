@@ -20,7 +20,7 @@ echo "[test-workspace] triggering workspace discovery and access"
 cargo run -- run \
   --project "$PROJECT_DIR" \
   --logs-dir "$LOG_DIR" \
-  --name agentfence-workspace-test \
+  --name fishbowl-workspace-test \
   -- \
   /bin/bash -lc \
   'sleep 1; python3 - <<'"'"'PY'"'"'

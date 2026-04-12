@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repo. If you're a human, see [
 
 ## Quick orientation
 
-AgentFence is a Rust CLI (~2500 LOC) that wraps AI coding agents in a Docker container and audits credential access via eBPF. Read these before making changes:
+Fishbowl is a Rust CLI (~2500 LOC) that wraps AI coding agents in a Docker container and audits credential access via eBPF. Read these before making changes:
 
 - **[CLAUDE.md](CLAUDE.md)** — detailed project conventions, architecture, gotchas, and trust boundary rules. This is the primary instruction file.
 - **[README.md](README.md)** — what the tool does, how it works, install, usage, session log format, known limitations.
@@ -19,10 +19,10 @@ docker run --rm -v "$PWD":/src -w /src rust:slim cargo check
 
 # Build the container images
 cargo install --path .
-agentfence build-image
+fishbowl build-image
 
 # Run smoke test
-agentfence run ~/some-project -- /bin/bash -lc 'echo hello'
+fishbowl run ~/some-project -- /bin/bash -lc 'echo hello'
 
 # Run the test suite
 make test-launch
@@ -35,9 +35,9 @@ make test-network
 
 ## Key rules
 
-1. **AgentFence is observation-only.** Don't add blocking, killing, or enforcement. Every layer is audit/telemetry. This is deliberate.
+1. **Fishbowl is observation-only.** Don't add blocking, killing, or enforcement. Every layer is audit/telemetry. This is deliberate.
 
-2. **Project content is untrusted.** Nothing from project text files, `.agentfence.toml`, or git remotes should silently import host credentials into the container. Env vars from project text are printed as recommendations. SSH keys require interactive approval. Config mounts require `--trust-config`. See CLAUDE.md trust boundary rules.
+2. **Project content is untrusted.** Nothing from project text files, `.fishbowl.toml`, or git remotes should silently import host credentials into the container. Env vars from project text are printed as recommendations. SSH keys require interactive approval. Config mounts require `--trust-config`. See CLAUDE.md trust boundary rules.
 
 3. **Credential values must never be logged.** Use `redact_env_value()` for env var previews (4 chars + length). Use `summarize_config_change()` for config sync-back audit events. No raw tokens, URLs, or env maps in audit.jsonl.
 
@@ -58,15 +58,15 @@ src/
   monitor.rs         — monitoring backend selection (ContainerLocal / LinuxHostEbpf / DockerVmHelper)
   ebpf.rs            — bpftrace collectors and credential-access correlation
   agent_runtime.rs   — agent auto-detection (Codex, Claude Code)
-  audit.rs           — agentfence audit report generator
-  config.rs          — .agentfence.toml loader
+  audit.rs           — fishbowl audit report generator
+  config.rs          — .fishbowl.toml loader
 
 container/
   Dockerfile         — agent container image
   Collector.Dockerfile — eBPF collector sidecar image
   entrypoint.sh      — container entrypoint
   bash_env.sh        — DEBUG trap + PROMPT_COMMAND hooks
-  file_watcher.py    — inotify on /agentfence/creds/ and /agentfence/ssh/
+  file_watcher.py    — inotify on /fishbowl/creds/ and /fishbowl/ssh/
   workspace_watcher.py — inotify + scan of mounted project
   network_watcher.py — ss polling for outbound connections
   audit_log.py       — CLI audit event writer

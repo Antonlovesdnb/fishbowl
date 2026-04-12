@@ -1,21 +1,21 @@
 #!/usr/bin/env sh
-# AgentFence installer / uninstaller
+# Fishbowl installer / uninstaller
 #
 # Install:
-#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh
 #
 # Uninstall:
-#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh -s -- --uninstall
 #
 # Environment variables:
-#   AGENTFENCE_VERSION   Specific tag to install (default: latest)
-#   AGENTFENCE_BIN_DIR   Install directory (default: /usr/local/bin, falling
+#   FISHBOWL_VERSION   Specific tag to install (default: latest)
+#   FISHBOWL_BIN_DIR   Install directory (default: /usr/local/bin, falling
 #                        back to ~/.local/bin if not writable)
 
 set -eu
 
-REPO="Antonlovesdnb/AgentFence"
-VERSION="${AGENTFENCE_VERSION:-latest}"
+REPO="Antonlovesdnb/Fishbowl"
+VERSION="${FISHBOWL_VERSION:-latest}"
 
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
@@ -23,19 +23,19 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 
 # ── Uninstall ──────────────────────────────────────────────────────
 if [ "${1:-}" = "--uninstall" ]; then
-  info "uninstalling AgentFence"
+  info "uninstalling Fishbowl"
 
   # Remove binary
   for dir in /usr/local/bin "$HOME/.local/bin"; do
-    if [ -f "$dir/agentfence" ]; then
-      info "removing $dir/agentfence"
-      rm -f "$dir/agentfence" 2>/dev/null || sudo rm -f "$dir/agentfence"
+    if [ -f "$dir/fishbowl" ]; then
+      info "removing $dir/fishbowl"
+      rm -f "$dir/fishbowl" 2>/dev/null || sudo rm -f "$dir/fishbowl"
     fi
   done
 
   # Remove Docker images
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    for image in agentfence:dev agentfence-collector:dev; do
+    for image in fishbowl:dev fishbowl-collector:dev; do
       if docker image inspect "$image" >/dev/null 2>&1; then
         info "removing Docker image $image"
         docker rmi "$image" 2>/dev/null || true
@@ -44,21 +44,21 @@ if [ "${1:-}" = "--uninstall" ]; then
   fi
 
   # Remove data directory (session logs, host scans, runtime auth, collector images)
-  if [ -d "$HOME/.agentfence" ]; then
-    printf '==> Remove session data at %s? (y/N): ' "$HOME/.agentfence"
+  if [ -d "$HOME/.fishbowl" ]; then
+    printf '==> Remove session data at %s? (y/N): ' "$HOME/.fishbowl"
     read -r answer </dev/tty 2>/dev/null || answer="n"
     case "$answer" in
       [yY]|[yY][eE][sS])
-        info "removing $HOME/.agentfence"
-        rm -rf "$HOME/.agentfence"
+        info "removing $HOME/.fishbowl"
+        rm -rf "$HOME/.fishbowl"
         ;;
       *)
-        info "keeping $HOME/.agentfence"
+        info "keeping $HOME/.fishbowl"
         ;;
     esac
   fi
 
-  info "AgentFence uninstalled."
+  info "Fishbowl uninstalled."
   exit 0
 fi
 # ── End uninstall ──────────────────────────────────────────────────
@@ -86,7 +86,7 @@ case "$OS" in
     esac
     ;;
   *)
-    err "unsupported OS: $OS (AgentFence supports macOS and Linux)"
+    err "unsupported OS: $OS (Fishbowl supports macOS and Linux)"
     ;;
 esac
 
@@ -100,12 +100,12 @@ if [ "$VERSION" = "latest" ]; then
 else
   TAG="$VERSION"
 fi
-info "installing AgentFence ${TAG} (${TARGET})"
+info "installing Fishbowl ${TAG} (${TARGET})"
 
 # Pick install directory.
 USE_SUDO=0
-if [ -n "${AGENTFENCE_BIN_DIR:-}" ]; then
-  BIN_DIR="$AGENTFENCE_BIN_DIR"
+if [ -n "${FISHBOWL_BIN_DIR:-}" ]; then
+  BIN_DIR="$FISHBOWL_BIN_DIR"
   mkdir -p "$BIN_DIR"
 elif [ -w /usr/local/bin ]; then
   BIN_DIR="/usr/local/bin"
@@ -120,7 +120,7 @@ fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
-ARCHIVE="agentfence-${TAG}-${TARGET}.tar.gz"
+ARCHIVE="fishbowl-${TAG}-${TARGET}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE}"
 SUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
 
@@ -146,14 +146,14 @@ fi
 
 info "extracting"
 tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${TMP_DIR}"
-EXTRACTED="${TMP_DIR}/agentfence-${TAG}-${TARGET}"
-[ -f "${EXTRACTED}/agentfence" ] || err "binary not found in archive"
+EXTRACTED="${TMP_DIR}/fishbowl-${TAG}-${TARGET}"
+[ -f "${EXTRACTED}/fishbowl" ] || err "binary not found in archive"
 
-info "installing to ${BIN_DIR}/agentfence"
+info "installing to ${BIN_DIR}/fishbowl"
 if [ "$USE_SUDO" = "1" ]; then
-  sudo install -m 0755 "${EXTRACTED}/agentfence" "${BIN_DIR}/agentfence"
+  sudo install -m 0755 "${EXTRACTED}/fishbowl" "${BIN_DIR}/fishbowl"
 else
-  install -m 0755 "${EXTRACTED}/agentfence" "${BIN_DIR}/agentfence"
+  install -m 0755 "${EXTRACTED}/fishbowl" "${BIN_DIR}/fishbowl"
 fi
 
 case ":$PATH:" in
@@ -166,9 +166,9 @@ esac
 # On Linux, bpftrace runs on the host kernel directly and doesn't need this.
 # The collector image runs inside the Docker VM on macOS.
 COLLECTOR_ARCH="$(uname -m)"
-COLLECTOR_ARCHIVE="agentfence-collector-linux-${COLLECTOR_ARCH}.tar.gz"
+COLLECTOR_ARCHIVE="fishbowl-collector-linux-${COLLECTOR_ARCH}.tar.gz"
 COLLECTOR_URL="https://github.com/${REPO}/releases/download/${TAG}/${COLLECTOR_ARCHIVE}"
-COLLECTOR_DIR="$HOME/.agentfence/collector-images"
+COLLECTOR_DIR="$HOME/.fishbowl/collector-images"
 
 info "downloading collector image for strong monitoring"
 mkdir -p "${COLLECTOR_DIR}"
@@ -180,7 +180,7 @@ if curl -fsSL "${COLLECTOR_URL}" -o "${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}" 2>/d
     if docker load --input "${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}" >/dev/null 2>&1; then
       info "collector image loaded — strong monitoring available"
     else
-      warn "docker load failed; agentfence build-image will retry on first run"
+      warn "docker load failed; fishbowl build-image will retry on first run"
     fi
   fi
 else
@@ -189,11 +189,11 @@ fi
 
 cat <<EOF
 
-AgentFence ${TAG} installed.
+Fishbowl ${TAG} installed.
 
 Next steps:
-  agentfence build-image    # build the container image (one-time)
-  agentfence run            # run the current directory in the sandbox
+  fishbowl build-image    # build the container image (one-time)
+  fishbowl run            # run the current directory in the sandbox
 
 Docs: https://github.com/${REPO}
 EOF

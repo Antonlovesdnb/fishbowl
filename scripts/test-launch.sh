@@ -11,7 +11,7 @@ mkdir -p "$TEST_LOGS"
 chmod 777 "$TEST_LOGS"
 printf 'demo-secret\n' > "$TEST_CRED"
 
-export AGENTFENCE_TEST_TOKEN="agentfence-smoke-test"
+export FISHBOWL_TEST_TOKEN="fishbowl-smoke-test"
 
 cd "$ROOT_DIR"
 
@@ -22,18 +22,18 @@ echo "[test-launch] running launcher smoke test"
 cargo run -- run \
   --project "$ROOT_DIR" \
   --mount "$TEST_CRED" \
-  --mount AGENTFENCE_TEST_TOKEN \
+  --mount FISHBOWL_TEST_TOKEN \
   --logs-dir "$TEST_LOGS" \
-  --name agentfence-smoke-test \
+  --name fishbowl-smoke-test \
   -- \
   /bin/bash -lc '
     set -euo pipefail
     test -d /workspace
-    test -f /agentfence/creds/demo.key
-    test "$(cat /agentfence/creds/demo.key)" = "demo-secret"
-    test "$(printenv AGENTFENCE_TEST_TOKEN)" = "agentfence-smoke-test"
-    test -d /var/log/agentfence
-    touch /var/log/agentfence/smoke.log
+    test -f /fishbowl/creds/demo.key
+    test "$(cat /fishbowl/creds/demo.key)" = "demo-secret"
+    test "$(printenv FISHBOWL_TEST_TOKEN)" = "fishbowl-smoke-test"
+    test -d /var/log/fishbowl
+    touch /var/log/fishbowl/smoke.log
   '
 
 echo "[test-launch] verifying host log export"

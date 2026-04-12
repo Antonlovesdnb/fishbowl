@@ -16,7 +16,7 @@ echo "[test-discovery] triggering env credential discovery"
 cargo run -- run \
   --project "$ROOT_DIR" \
   --logs-dir "$LOG_DIR" \
-  --name agentfence-discovery-test \
+  --name fishbowl-discovery-test \
   -- \
   /bin/bash -lc \
   'export OPENAI_API_KEY=demo-openai-key; export GH_TOKEN=demo-gh-token; true'

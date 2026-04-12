@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-const CONFIG_FILE_NAME: &str = ".agentfence.toml";
+const CONFIG_FILE_NAME: &str = ".fishbowl.toml";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ProjectConfig {
@@ -21,7 +21,7 @@ pub fn load_project_config(project_dir: &Path) -> Option<ProjectConfig> {
     let content = fs::read_to_string(&config_path).ok()?;
     let config: ProjectConfig = toml::from_str(&content).ok()?;
     println!(
-        "[AgentFence] Loaded project config from {}",
+        "[Fishbowl] Loaded project config from {}",
         config_path.display()
     );
 
@@ -31,13 +31,13 @@ pub fn load_project_config(project_dir: &Path) -> Option<ProjectConfig> {
     // should only come from CLI flags, not from untrusted project files.
     if config.network.is_some() {
         eprintln!(
-            "[AgentFence] WARNING: project config sets network = {:?} — ignored. Use --network on the CLI to change network mode.",
+            "[Fishbowl] WARNING: project config sets network = {:?} — ignored. Use --network on the CLI to change network mode.",
             config.network.as_deref().unwrap_or("?")
         );
     }
     if config.monitor.is_some() {
         eprintln!(
-            "[AgentFence] WARNING: project config sets monitor = {:?} — ignored. Use --monitor on the CLI to change monitoring level.",
+            "[Fishbowl] WARNING: project config sets monitor = {:?} — ignored. Use --monitor on the CLI to change monitoring level.",
             config.monitor.as_deref().unwrap_or("?")
         );
     }

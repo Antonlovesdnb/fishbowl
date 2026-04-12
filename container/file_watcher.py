@@ -7,13 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-WATCH_DIRS = [Path("/agentfence/creds"), Path("/agentfence/ssh")]
-REGISTRY_PATH = Path("/var/log/agentfence/watcher/registry.json")
-AUDIT_PATH = Path("/var/log/agentfence/watcher/audit.jsonl")
-AUDIT_BIN = "/usr/local/bin/agentfence-audit"
-REGISTRY_BIN = "/usr/local/bin/agentfence-registry"
+WATCH_DIRS = [Path("/fishbowl/creds"), Path("/fishbowl/ssh")]
+REGISTRY_PATH = Path("/var/log/fishbowl/watcher/registry.json")
+AUDIT_PATH = Path("/var/log/fishbowl/watcher/audit.jsonl")
+AUDIT_BIN = "/usr/local/bin/fishbowl-audit"
+REGISTRY_BIN = "/usr/local/bin/fishbowl-registry"
 ALERT_PATH = "/proc/1/fd/2"
-DISABLE_FILE_ACCESS_AUDIT = os.getenv("AGENTFENCE_DISABLE_FILE_ACCESS_AUDIT", "0") == "1"
+DISABLE_FILE_ACCESS_AUDIT = os.getenv("FISHBOWL_DISABLE_FILE_ACCESS_AUDIT", "0") == "1"
 
 
 def utc_now() -> str:
@@ -35,7 +35,7 @@ def save_registry(registry: dict) -> None:
 
 
 def classify_file(path: Path) -> tuple[str, str]:
-    if str(path).startswith("/agentfence/ssh/"):
+    if str(path).startswith("/fishbowl/ssh/"):
         return "ssh_private_key", "SSH Private Key"
 
     suffix = path.suffix.lower()
@@ -107,7 +107,7 @@ def is_internal_watcher_process(info: dict) -> bool:
     cmdline = info.get("cmdline", "")
     if name == "inotifywait":
         return True
-    return "agentfence-file-watcher" in cmdline
+    return "fishbowl-file-watcher" in cmdline
 
 
 def resolve_process_by_cmdline(path: Path) -> tuple[str | None, str | None, str | None, str | None, str | None]:
@@ -253,7 +253,7 @@ def emit_alert(severity: str, message: str) -> None:
         return
     try:
         with open(ALERT_PATH, "w") as fh:
-            fh.write(f"[AgentFence] {severity.upper()}: {message}\n")
+            fh.write(f"[Fishbowl] {severity.upper()}: {message}\n")
     except OSError:
         pass
 
@@ -287,7 +287,7 @@ def emit_access_event(path: Path, event_name: str, process_cache: dict[str, tupl
         "pid": os.getpid(),
         "ppid": os.getppid(),
         "cwd": os.getcwd(),
-        "agent": os.getenv("AGENTFENCE_AGENT", "shell"),
+        "agent": os.getenv("FISHBOWL_AGENT", "shell"),
         "command": None,
         "variable": None,
         "old_value": None,

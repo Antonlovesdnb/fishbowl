@@ -17,7 +17,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-const MOUNTED_CREDENTIAL_PREFIXES: [&str; 2] = ["/agentfence/creds/", "/agentfence/ssh/"];
+const MOUNTED_CREDENTIAL_PREFIXES: [&str; 2] = ["/fishbowl/creds/", "/fishbowl/ssh/"];
 const CORRELATION_WINDOW_MS: u128 = 2 * 60 * 1000;
 static RECENT_CREDENTIAL_ACCESSES: OnceLock<Mutex<Vec<RecentCredentialAccess>>> = OnceLock::new();
 static RECENT_FINDINGS: OnceLock<Mutex<VecDeque<RecentFindingKey>>> = OnceLock::new();
@@ -170,7 +170,7 @@ impl CollectorHandle {
 
 pub fn validate_bpftrace_prerequisites() -> Result<()> {
     if !is_running_as_root() {
-        bail!("`--ebpf-exec` and `--ebpf-net` currently require running AgentFence as root because `bpftrace` needs elevated privileges");
+        bail!("`--ebpf-exec` and `--ebpf-net` currently require running Fishbowl as root because `bpftrace` needs elevated privileges");
     }
 
     let status = Command::new("bpftrace")
@@ -255,7 +255,7 @@ pub fn run_privileged_helper(
 
     for handle in &collectors {
         println!(
-            "[AgentFence] Host eBPF collector enabled: {} ({})",
+            "[Fishbowl] Host eBPF collector enabled: {} ({})",
             handle.name,
             handle.events_path.display()
         );
@@ -933,7 +933,7 @@ fn parse_file_record(line: &str, scope: &ScopeMetadata) -> Option<FileAccessEven
     // Don't redundantly check process_in_scope here. The bpftrace script
     // already cgroup-filters at the kernel probe site, which is authoritative.
     // Doing a second /proc/PID/ns/pid lookup in userspace introduces a fatal
-    // race for short-lived processes: cat /agentfence/creds/foo.txt can be
+    // race for short-lived processes: cat /fishbowl/creds/foo.txt can be
     // gone by the time this thread reads the line, fs::read_link returns
     // ENOENT, process_in_scope returns false, and the event is dropped — even
     // though it was correctly captured by bpftrace inside the agent container's
@@ -944,7 +944,7 @@ fn parse_file_record(line: &str, scope: &ScopeMetadata) -> Option<FileAccessEven
     let observed_ppid = read_ppid(observed_pid).unwrap_or_default();
     let observed_path = resolve_open_path(observed_pid, &raw_path).unwrap_or_else(|| raw_path.clone());
     let cmdline = read_cmdline(observed_pid).unwrap_or_else(|| process_name.clone());
-    if is_internal_agentfence_process(&process_name, &cmdline) {
+    if is_internal_fishbowl_process(&process_name, &cmdline) {
         return None;
     }
     let monitored = lookup_monitored_path(scope, &observed_path)?;
@@ -1593,18 +1593,18 @@ fn read_ppid(pid: i32) -> Option<i32> {
     parts.next()?.parse::<i32>().ok()
 }
 
-fn is_internal_agentfence_process(process_name: &str, cmdline: &str) -> bool {
+fn is_internal_fishbowl_process(process_name: &str, cmdline: &str) -> bool {
     let normalized_name = process_name.rsplit('/').next().unwrap_or(process_name);
     if normalized_name == "inotifywait" {
         return true;
     }
 
     [
-        "agentfence-file-watcher",
-        "agentfence-workspace-watcher",
-        "agentfence-network-watcher",
-        "agentfence-audit",
-        "agentfence-registry",
+        "fishbowl-file-watcher",
+        "fishbowl-workspace-watcher",
+        "fishbowl-network-watcher",
+        "fishbowl-audit",
+        "fishbowl-registry",
         "workspace_watcher.py",
         "file_watcher.py",
         "network_watcher.py",

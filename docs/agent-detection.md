@@ -1,6 +1,6 @@
 # Agent Auto-Detection
 
-AgentFence auto-detects which AI coding agent to wrap based on signals from the project directory and host environment. The detected agent determines which auth files are auto-mounted, which default command is launched, and how session state is synced back after the run.
+Fishbowl auto-detects which AI coding agent to wrap based on signals from the project directory and host environment. The detected agent determines which auth files are auto-mounted, which default command is launched, and how session state is synced back after the run.
 
 ## Detection priority
 
@@ -20,7 +20,7 @@ Detection follows a cascade — first match wins:
 | 4 | Both auth present | Shell (fallback) | "both Claude and Codex auth were found on the host" |
 | 5 | No signals | Shell | "no supported agent marker, project session, or auth signal was found" |
 
-The detected agent and reason are printed at startup: `[AgentFence] Auto-selected agent: codex (only Codex auth was found on the host)`.
+The detected agent and reason are printed at startup: `[Fishbowl] Auto-selected agent: codex (only Codex auth was found on the host)`.
 
 You can override detection with `--agent codex` or `--agent claude-code` (hidden flag).
 
@@ -29,10 +29,10 @@ You can override detection with `--agent codex` or `--agent claude-code` (hidden
 ### Claude Code
 
 **Auth mounts** (copied to a runtime dir, then bind-mounted):
-- `~/.claude/.credentials.json` -> `/agentfence/home/.claude/.credentials.json`
-- `~/.claude/.current-session` -> `/agentfence/home/.claude/.current-session`
-- `~/.claude/history.jsonl` -> `/agentfence/home/.claude/history.jsonl`
-- `~/.claude.json` -> `/agentfence/home/.claude.json`
+- `~/.claude/.credentials.json` -> `/fishbowl/home/.claude/.credentials.json`
+- `~/.claude/.current-session` -> `/fishbowl/home/.claude/.current-session`
+- `~/.claude/history.jsonl` -> `/fishbowl/home/.claude/history.jsonl`
+- `~/.claude.json` -> `/fishbowl/home/.claude.json`
 - Project sessions from `~/.claude/projects/<slug>/` are mirrored with path rewriting
 
 **Workspace trust**: `~/.claude.json` is updated to auto-accept the workspace trust dialog for the container session (finding S4 — no opt-out yet).
@@ -46,11 +46,11 @@ You can override detection with `--agent codex` or `--agent claude-code` (hidden
 ### Codex
 
 **Auth mounts** (copied to a runtime dir, then bind-mounted):
-- `~/.codex/auth.json` -> `/agentfence/home/.codex/auth.json`
-- `~/.codex/config.toml` -> `/agentfence/home/.codex/config.toml`
-- `~/.codex/version.json` -> `/agentfence/home/.codex/version.json`
-- `~/.codex/history.jsonl` -> `/agentfence/home/.codex/history.jsonl` (filtered to project)
-- `~/.codex/sessions/` -> `/agentfence/home/.codex/sessions/` (filtered to project)
+- `~/.codex/auth.json` -> `/fishbowl/home/.codex/auth.json`
+- `~/.codex/config.toml` -> `/fishbowl/home/.codex/config.toml`
+- `~/.codex/version.json` -> `/fishbowl/home/.codex/version.json`
+- `~/.codex/history.jsonl` -> `/fishbowl/home/.codex/history.jsonl` (filtered to project)
+- `~/.codex/sessions/` -> `/fishbowl/home/.codex/sessions/` (filtered to project)
 
 **Default command**: `codex`
 

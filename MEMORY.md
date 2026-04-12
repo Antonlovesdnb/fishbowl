@@ -1,4 +1,4 @@
-# MEMORY.md — AgentFence findings snapshot
+# MEMORY.md — Fishbowl findings snapshot
 
 Consolidated state of security, usability, and performance findings across 4 review passes performed by Claude Opus 4.6 on 2026-04-07. Source files: `SECURITY_REVIEW.md`, `SECURITY_REVIEW_2.md`, `SECURITY_REVIEW_3.md`, `SECURITY_REVIEW_4.md`. This file is a snapshot — for full context on any finding, read the source review file.
 
@@ -6,7 +6,7 @@ Consolidated state of security, usability, and performance findings across 4 rev
 
 - **In scope:** opportunistic credential theft (malicious deps, env-var poisoning, MCP tampering, prompt-injection-driven curl/wget exfil)
 - **Out of scope:** determined adversaries, attacks on the monitoring stack itself, agent encoding creds into its own API channel
-- **Runtime posture:** observation-only. AgentFence does not block, terminate, or interfere with the agent — every layer is audit/telemetry. The only "enforcement" is the static container boundary (`--cap-drop ALL`, namespaces, `--security-opt no-new-privileges`). `--monitor strong` enables *stronger observation* via Linux host-side eBPF, not dynamic enforcement. Blocking was deliberately removed (`README.md:216`, `AgentFence.md:347`).
+- **Runtime posture:** observation-only. Fishbowl does not block, terminate, or interfere with the agent — every layer is audit/telemetry. The only "enforcement" is the static container boundary (`--cap-drop ALL`, namespaces, `--security-opt no-new-privileges`). `--monitor strong` enables *stronger observation* via Linux host-side eBPF, not dynamic enforcement. Blocking was deliberately removed (`README.md:216`, `Fishbowl.md:347`).
 
 ## Review history
 
@@ -26,8 +26,8 @@ A runtime test pass on macOS + Colima 6.8.0-100-generic aarch64. None of these a
 
 - Added `.github/workflows/release.yml`: 4 native targets (macOS x86_64+arm64, Linux x86_64+arm64 musl-static), SHA256SUMS, GitHub Releases on `v*` tag push.
 - Added `install.sh`: OS/arch-detect, checksum verify, install to `/usr/local/bin` (or `~/.local/bin`).
-- `src/container.rs:manifest_dir()` was hardcoded to `env!("CARGO_MANIFEST_DIR")`, baking the build-time path into the binary and breaking every prebuilt-binary install with `container assets directory is missing at /Users/runner/work/...`. Replaced with `include_dir!()` embedding + extraction to `dirs::cache_dir()/agentfence/container/<version>/` at runtime. Source-tree installs short-circuit to the live on-disk copy so dev edits still take effect.
-- `build_image()` skips the collector image when `dev_source_root().is_none()` (prebuilt-binary case), with a clear log line. The collector image rebuilds the agentfence binary inside a Docker container and needs the full Rust source tree as build context, which prebuilt-binary installs don't have.
+- `src/container.rs:manifest_dir()` was hardcoded to `env!("CARGO_MANIFEST_DIR")`, baking the build-time path into the binary and breaking every prebuilt-binary install with `container assets directory is missing at /Users/runner/work/...`. Replaced with `include_dir!()` embedding + extraction to `dirs::cache_dir()/fishbowl/container/<version>/` at runtime. Source-tree installs short-circuit to the live on-disk copy so dev edits still take effect.
+- `build_image()` skips the collector image when `dev_source_root().is_none()` (prebuilt-binary case), with a clear log line. The collector image rebuilds the fishbowl binary inside a Docker container and needs the full Rust source tree as build context, which prebuilt-binary installs don't have.
 - `container/Collector.Dockerfile` had two latent bugs: pinned at `rust:1.86-alpine` while `monitor.rs` uses let-chains (Rust ≥ 1.88), and didn't `COPY container ./container` so the new `include_dir!()` macro failed at compile time. Switched to `rust:alpine` + added the COPY. The fact that #1 was latent strongly suggests nobody had built the collector image since let-chains landed in `monitor.rs`.
 
 **macOS strong monitoring made functional.**
@@ -47,21 +47,21 @@ Before today: empty `ebpf_*.jsonl` files on every macOS run, with errors buried 
 **End-to-end validation result on Colima:**
 
 ```
-agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
-  /bin/bash -lc 'for i in 1 2 3; do cat /agentfence/creds/test-cred.txt; done'
+fishbowl run --monitor strong --mount ~/test-cred.txt ~/fishbowl-smoke -- \
+  /bin/bash -lc 'for i in 1 2 3; do cat /fishbowl/creds/test-cred.txt; done'
 ```
 - exec collector: 4 events captured ✓
 - connect collector: 1 event captured ✓
 - file collector: 3 events captured ✓
-- registry `access_count` for `/agentfence/creds/test-cred.txt`: **3** (matches the 3 cats)
+- registry `access_count` for `/fishbowl/creds/test-cred.txt`: **3** (matches the 3 cats)
 - All `ebpf_*.stderr.log` files empty (no probe-attach failures)
 
 **Open follow-ups from this pass (all functional/in-progress, not security findings):**
 
-- Publish `agentfence-collector` image to GHCR so prebuilt-binary installs on macOS can `docker pull` it instead of needing a source-tree install. This is the only thing keeping `--monitor strong` from working out of the box for binary installs.
+- Publish `fishbowl-collector` image to GHCR so prebuilt-binary installs on macOS can `docker pull` it instead of needing a source-tree install. This is the only thing keeping `--monitor strong` from working out of the box for binary installs.
 - Apply the same `process_in_scope` race fix to `parse_exec_record` and `parse_connect_record` for completeness.
 - Connect collector currently records `unresolved-fd:N` for destinations — the bpftrace script captures only `args->fd`, not the user-space sockaddr. Enhancement: read the sockaddr from `args->uservaddr` and decode IP/port in the script.
-- Colima default mounts don't include `/var/folders` (macOS native `$TMPDIR`), so any `mktemp -d` project path fails with `bind source path does not exist`. Document in README quick-start, or add a preflight check in `agentfence run`.
+- Colima default mounts don't include `/var/folders` (macOS native `$TMPDIR`), so any `mktemp -d` project path fails with `bind source path does not exist`. Document in README quick-start, or add a preflight check in `fishbowl run`.
 - The README's "macOS host" platform-support paragraph and the in-binary `Skipping collector image build` notice should agree on the source-install requirement; both updated this pass but worth keeping in sync as the registry-publish work lands.
 
 ## Cumulative fix status (from `SECURITY_REVIEW_4.md`)
@@ -74,12 +74,12 @@ agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
 | N1 | Logs dir 0o1733 usability/security | FIXED (Pass 3) |
 | N2 | Auto-build on every run | FIXED (Pass 3) |
 | N4 | Redaction subshell overhead | FIXED (Pass 3) |
-| N6 | `/agentfence/home` 0o777 exposing auth files | FIXED (Pass 4) |
+| N6 | `/fishbowl/home` 0o777 exposing auth files | FIXED (Pass 4) |
 | N7 | `--user` breaks `npm install -g` | FIXED (Pass 4, code path is dead) |
 | N9 | `registry.json` initialized as `{}` | FIXED (Pass 4) |
-| U1 | No `agentfence audit` subcommand | FIXED (implemented in `src/audit.rs`) |
+| U1 | No `fishbowl audit` subcommand | FIXED (implemented in `src/audit.rs`) |
 | U3 | No auto-build on first run | FIXED (Pass 3) |
-| U4 | No config file support | FIXED (`.agentfence.toml` loader in `src/config.rs`) |
+| U4 | No config file support | FIXED (`.fishbowl.toml` loader in `src/config.rs`) |
 | S8 | Container filesystem is read-write | FIXED (`--read-only` + `--tmpfs /tmp` + `--tmpfs /run` in `container.rs`) |
 
 ## Open security findings
@@ -100,7 +100,7 @@ agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
 | S11 | `npm install -g` runs as root with suppressed output in entrypoint (dead per N11, still present) |
 | S12 | inotifywait process-attribution race (inherent — eBPF solves) |
 | N3 | eBPF exec env audit reads `/proc/PID/environ` on every execve |
-| N10 | `/tmp/agentfence-npm/bin` in PATH is binary-hijack vector |
+| N10 | `/tmp/fishbowl-npm/bin` in PATH is binary-hijack vector |
 
 ### LOW
 | ID | Summary |
@@ -142,7 +142,7 @@ agentfence run --monitor strong --mount ~/test-cred.txt ~/agentfence-smoke -- \
 
 | # | ID | Summary | Effort |
 |---|----|---------|--------|
-| 1 | N10 | Remove `/tmp/agentfence-npm/bin` from PATH (binary hijack vector) | Trivial |
+| 1 | N10 | Remove `/tmp/fishbowl-npm/bin` from PATH (binary hijack vector) | Trivial |
 | 2 | S5 | Add UDP/DNS monitoring | Medium |
 | 3 | S6 | Replace `ss` polling with event-based network monitoring | Medium |
 | 4 | U2 | Add real-time credential alerts during sessions | Medium |

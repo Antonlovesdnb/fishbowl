@@ -1,6 +1,6 @@
 # Credential Scanning
 
-AgentFence scans for credentials in two passes before the container starts. The results seed the runtime credential registry so the file collector knows which `openat()` events are interesting.
+Fishbowl scans for credentials in two passes before the container starts. The results seed the runtime credential registry so the file collector knows which `openat()` events are interesting.
 
 ## Host scan (`source: "host_scan"`)
 
@@ -283,7 +283,7 @@ Grouped by category:
 ## What happens with the results
 
 1. The scan report is printed to the console during startup
-2. `host_scan.json` is written to a **host-only location** (`~/.agentfence/host-scans/`) — it is NOT visible inside the container
+2. `host_scan.json` is written to a **host-only location** (`~/.fishbowl/host-scans/`) — it is NOT visible inside the container
 3. `project_scan` findings are translated to in-container paths and seeded into `registry.json`
 4. `host_scan` findings for the selected agent's auth files are seeded via `auto_auth_path_aliases`
 5. Agent-specific env vars (hardcoded per agent type, e.g. `OPENAI_API_KEY` for Cursor) are auto-passed if set on the host
@@ -293,19 +293,19 @@ Grouped by category:
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="trust-boundary-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="trust-boundary-light.svg">
-  <img alt="AgentFence trust boundary" src="trust-boundary-light.svg" width="820">
+  <img alt="Fishbowl trust boundary" src="trust-boundary-light.svg" width="820">
 </picture>
 
 ## What is NOT auto-passed (security boundary)
 
-Nothing from the host enters the container without explicit user action, except agent file-based auth (the user chose the agent) and per-agent env var hints (compiled into AgentFence, not project-controlled).
+Nothing from the host enters the container without explicit user action, except agent file-based auth (the user chose the agent) and per-agent env var hints (compiled into Fishbowl, not project-controlled).
 
 **SSH keys** are presented as an interactive numbered list when the project has git remotes. The user picks which keys to mount. In non-interactive mode (CI, piped stdin), they are printed as a recommendation and require `--mount ~/.ssh/<key>`.
 
 **Credential env vars** discovered in project text files (e.g., a README that mentions `AWS_SECRET_ACCESS_KEY`) are printed as recommendations but NOT auto-passed. `GH_TOKEN` / `GITHUB_TOKEN` are also NOT auto-passed — use `--mount GH_TOKEN` explicitly.
 
-**`.agentfence.toml` mounts** are printed as recommendations but never applied. The project repo is untrusted input. Use `--mount` on the CLI instead.
+**`.fishbowl.toml` mounts** are printed as recommendations but never applied. The project repo is untrusted input. Use `--mount` on the CLI instead.
 
-**`.agentfence.toml` network and monitor** overrides are always ignored. Use CLI flags (`--network`, `--monitor`) to change security posture.
+**`.fishbowl.toml` network and monitor** overrides are always ignored. Use CLI flags (`--network`, `--monitor`) to change security posture.
 
 Source: `src/discovery.rs`, `src/container.rs`, `src/cli.rs`

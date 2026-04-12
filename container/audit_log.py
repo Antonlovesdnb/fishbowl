@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Write AgentFence audit events")
+    parser = argparse.ArgumentParser(description="Write Fishbowl audit events")
     parser.add_argument("--event", required=True)
     parser.add_argument("--severity", required=True)
     parser.add_argument("--command")
@@ -46,7 +46,7 @@ def main() -> int:
         "pid": os.getpid(),
         "ppid": os.getppid(),
         "cwd": os.getcwd(),
-        "agent": os.getenv("AGENTFENCE_AGENT", "shell"),
+        "agent": os.getenv("FISHBOWL_AGENT", "shell"),
         "command": args.command,
         "variable": args.variable,
         "old_value": args.old_value,
@@ -70,7 +70,7 @@ def main() -> int:
         "reason": args.reason,
     }
 
-    audit_log = Path("/var/log/agentfence/watcher/audit.jsonl")
+    audit_log = Path("/var/log/fishbowl/watcher/audit.jsonl")
     audit_log.parent.mkdir(parents=True, exist_ok=True)
     with audit_log.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, separators=(",", ":")) + "\n")

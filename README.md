@@ -1,7 +1,7 @@
-# AgentFence
+# Fishbowl
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/AgentFence/releases)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/AgentFence/actions)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/Fishbowl/releases)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/Fishbowl/actions)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -10,12 +10,12 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/architecture-light.svg">
-  <img alt="AgentFence architecture" src="docs/architecture-light.svg" width="1120">
+  <img alt="Fishbowl architecture" src="docs/architecture-light.svg" width="1120">
 </picture>
 
 A containerized credential auditing perimeter for AI coding agents. Validated end-to-end with **Codex** and **Claude Code** on both macOS and Linux.
 
-AgentFence wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only — it doesn't block or kill anything the agent does.
+Fishbowl wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only — it doesn't block or kill anything the agent does.
 
 The container is the security boundary. The agent can see your project directory, its own auth files (auto-mounted copies of `~/.codex/` or `~/.claude/`), any credentials you explicitly `--mount`, and the session logs — but not the rest of your home directory or system. The container filesystem is read-only, all Linux capabilities are dropped, and privilege escalation is disabled.
 
@@ -24,82 +24,82 @@ The container is the security boundary. The agent can see your project directory
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/flow-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/flow-light.svg">
-  <img alt="AgentFence flow" src="docs/flow-light.svg" width="1200">
+  <img alt="Fishbowl flow" src="docs/flow-light.svg" width="1200">
 </picture>
 
-When you run `agentfence run ~/my-project`, this is what happens:
+When you run `fishbowl run ~/my-project`, this is what happens:
 
-1. **Host credential scan.** AgentFence walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.agentfence/host-scans/`) — it is NOT visible inside the container. See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
+1. **Host credential scan.** Fishbowl walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.fishbowl/host-scans/`) — it is NOT visible inside the container. See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
 
-2. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, AgentFence picks the agent type and auto-mounts the relevant auth files into `/agentfence/home/` inside the container. See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — AgentFence prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
+2. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container. See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
 
 3. **Registry seeding.** Credential paths from the host scan are translated to their in-container equivalents and written to the runtime credential registry (`registry.json`). This is how the file collector knows which `openat()` events are interesting.
 
 4. **Container launch.** Docker runs the agent inside a hardened container:
    - `--cap-drop ALL --security-opt no-new-privileges`
    - Project bind-mounted at `/<project-name>` and `/workspace`
-   - Selected credentials at `/agentfence/creds/` and `/agentfence/ssh/` (read-only)
-   - Agent auth at `/agentfence/home/` (the container's `$HOME`)
-   - Session logs at `/var/log/agentfence/`
+   - Selected credentials at `/fishbowl/creds/` and `/fishbowl/ssh/` (read-only)
+   - Agent auth at `/fishbowl/home/` (the container's `$HOME`)
+   - Session logs at `/var/log/fishbowl/`
 
-5. **Monitoring starts.** AgentFence picks the strongest monitoring available:
+5. **Monitoring starts.** Fishbowl picks the strongest monitoring available:
    - **Linux:** host-side bpftrace via a `sudo` helper, scoped to the container's cgroup
    - **macOS:** bpftrace in a privileged sidecar container inside the Docker VM (auto-detects Docker Desktop, Colima, OrbStack, Rancher Desktop)
    - **Fallback:** if the strong path fails (no root, Docker not running, collector image missing), prints the reason and continues with container-local telemetry (bash env hooks, inotify file watchers, `ss` network polling)
 
 6. **Agent runs.** Your agent does its work inside the container. Every `execve()`, `connect()`, and `openat()` on a monitored credential is captured.
 
-7. **Shutdown.** When the agent exits, AgentFence gracefully drains the bpftrace collectors (SIGINT + 1.5s grace period) and tears down the helper container. Session state is synced back to the host for Codex/Claude.
+7. **Shutdown.** When the agent exits, Fishbowl gracefully drains the bpftrace collectors (SIGINT + 1.5s grace period) and tears down the helper container. Session state is synced back to the host for Codex/Claude.
 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh
 ```
 
-That's it. The script auto-detects your OS and architecture, downloads the right binary and the collector image from the latest [GitHub release](https://github.com/Antonlovesdnb/AgentFence/releases), verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if no write access).
+That's it. The script auto-detects your OS and architecture, downloads the right binary and the collector image from the latest [GitHub release](https://github.com/Antonlovesdnb/Fishbowl/releases), verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if no write access).
 
 **Supported platforms:** macOS (Apple Silicon) and Linux (x86_64 + arm64). Linux binaries are fully static (musl libc) so they run on any distro including Alpine.
 
-**Requirements:** a container runtime — Docker Desktop, Colima, OrbStack, or Rancher Desktop — must be running before `agentfence run`.
+**Requirements:** a container runtime — Docker Desktop, Colima, OrbStack, or Rancher Desktop — must be running before `fishbowl run`.
 
-**Options:** pin a version with `AGENTFENCE_VERSION=v0.1.9`, override the install directory with `AGENTFENCE_BIN_DIR=...`.
+**Options:** pin a version with `FISHBOWL_VERSION=v0.1.9`, override the install directory with `FISHBOWL_BIN_DIR=...`.
 
-> **Building from source:** `cargo install --path . && agentfence build-image` (requires Rust >= 1.85). Only needed if you're contributing or want to modify the container image.
+> **Building from source:** `cargo install --path . && fishbowl build-image` (requires Rust >= 1.85). Only needed if you're contributing or want to modify the container image.
 
 ### Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/AgentFence/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/Fishbowl/main/install.sh | sh -s -- --uninstall
 ```
 
-Removes the binary, Docker images, and optionally `~/.agentfence/` (prompts before deleting session data).
+Removes the binary, Docker images, and optionally `~/.fishbowl/` (prompts before deleting session data).
 
 ## Usage
 
 ```bash
 # Run the current directory
-agentfence run
+fishbowl run
 
 # Run a specific project
-agentfence run ~/projects/my-app
+fishbowl run ~/projects/my-app
 
 # Mount a credential (auto-detects type: env var, SSH key, or credential file)
-agentfence run --mount GH_TOKEN --mount ~/.ssh/id_ed25519 --mount ~/secrets/service.json
+fishbowl run --mount GH_TOKEN --mount ~/.ssh/id_ed25519 --mount ~/secrets/service.json
 
 # Use host networking (for VPN/lab routes)
-agentfence run --network host
+fishbowl run --network host
 ```
 
-Mounted credentials appear inside the container at `/agentfence/creds/<filename>` (credential files) and `/agentfence/ssh/<filename>` (SSH keys). Environment variables are passed through directly.
+Mounted credentials appear inside the container at `/fishbowl/creds/<filename>` (credential files) and `/fishbowl/ssh/<filename>` (SSH keys). Environment variables are passed through directly.
 
 ## Reviewing sessions
 
 After a run, review what happened:
 
 ```bash
-agentfence audit              # most recent session
-agentfence audit <SESSION>    # specific session directory
+fishbowl audit              # most recent session
+fishbowl audit <SESSION>    # specific session directory
 ```
 
 The audit report shows:
@@ -109,10 +109,10 @@ The audit report shows:
 
 ### Session log location
 
-All session data lives under `~/.agentfence/logs/`:
+All session data lives under `~/.fishbowl/logs/`:
 
 ```
-~/.agentfence/
+~/.fishbowl/
   logs/
     latest -> session-1775780487       # symlink to most recent
     session-1775780487/                # one directory per run
@@ -161,10 +161,10 @@ Full credential values are **not intentionally logged**. Environment variable fi
 {
   "credentials": [
     {
-      "id": "file::/agentfence-smoke/.env",
+      "id": "file::/fishbowl-smoke/.env",
       "classification": "Project .env Credential File",
       "discovery_method": "project_scan",
-      "path": "/agentfence-smoke/.env",
+      "path": "/fishbowl-smoke/.env",
       "access_count": 3,
       "last_accessed_at": "2026-04-10T00:21:29+00:00"
     }
@@ -179,7 +179,7 @@ Full credential values are **not intentionally logged**. Environment variable fi
   "event": "credential_access",
   "process_name": "cat",
   "raw_path": "/workspace/.env",
-  "resolved_path": "/agentfence-demo/.env",
+  "resolved_path": "/fishbowl-demo/.env",
   "operation": "openat",
   "classification": "Project .env Credential File",
   "process_chain": "cat <- bash <- tini <- containerd-shim <- systemd",
@@ -227,17 +227,17 @@ Full credential values are **not intentionally logged**. Environment variable fi
 | Platform | Monitoring | Notes |
 |---|---|---|
 | **Linux** (source or binary) | Host-side eBPF via `sudo` helper | Full exec/connect/file coverage, cgroup-scoped. No collector image needed — bpftrace runs as the host binary. |
-| **macOS** (source install) | eBPF sidecar in Docker VM | Same coverage. `agentfence build-image` builds both the agent and collector images. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
+| **macOS** (source install) | eBPF sidecar in Docker VM | Same coverage. `fishbowl build-image` builds both the agent and collector images. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
 | **macOS** (prebuilt binary) | Container-local watchers | The collector image requires the source tree to build. `install.sh` attempts to download a pre-built collector from the release, but this requires repo access. Falls back to container-local telemetry if unavailable. |
-| **Any host, fallback** | Container-local watchers | If the eBPF path fails (no root on Linux, Docker not running, etc.), AgentFence falls back to bash env hooks, inotify file watchers, and `ss` network polling. |
+| **Any host, fallback** | Container-local watchers | If the eBPF path fails (no root on Linux, Docker not running, etc.), Fishbowl falls back to bash env hooks, inotify file watchers, and `ss` network polling. |
 
-**Container images are platform-specific.** After cloning to a different architecture, run `agentfence build-image` before `agentfence run`.
+**Container images are platform-specific.** After cloning to a different architecture, run `fishbowl build-image` before `fishbowl run`.
 
 ## Known limitations
 
-- **In-container audit log is writable by the agent.** The in-container watchers write `audit.jsonl` and `registry.json` to a writable subdirectory (`/var/log/agentfence/watcher/`) inside the container. A compromised agent could tamper with this watcher output. However, the **host-side eBPF logs (`ebpf_*.jsonl`) are protected** — the parent session logs directory is mounted read-only into the agent container, and the eBPF logs are written by the helper container via its own mount. So the high-fidelity event data (exec, connect, file access from the kernel layer) is tamper-proof; only the in-container watcher events are at risk.
+- **In-container audit log is writable by the agent.** The in-container watchers write `audit.jsonl` and `registry.json` to a writable subdirectory (`/var/log/fishbowl/watcher/`) inside the container. A compromised agent could tamper with this watcher output. However, the **host-side eBPF logs (`ebpf_*.jsonl`) are protected** — the parent session logs directory is mounted read-only into the agent container, and the eBPF logs are written by the helper container via its own mount. So the high-fidelity event data (exec, connect, file access from the kernel layer) is tamper-proof; only the in-container watcher events are at risk.
 
-- **Fallback monitoring has coverage gaps.** When strong monitoring (the default) is unavailable — no root on Linux, or collector image missing on macOS — AgentFence falls back to container-local watchers. These have known gaps: bash env hooks don't fire for `sh`/`python`/`node`, the `ss` network poller misses sub-50ms connections, and UDP/DNS isn't covered. Strong monitoring covers all of these via kernel-level eBPF probes.
+- **Fallback monitoring has coverage gaps.** When strong monitoring (the default) is unavailable — no root on Linux, or collector image missing on macOS — Fishbowl falls back to container-local watchers. These have known gaps: bash env hooks don't fire for `sh`/`python`/`node`, the `ss` network poller misses sub-50ms connections, and UDP/DNS isn't covered. Strong monitoring covers all of these via kernel-level eBPF probes.
 
 - **Tested agents.** Only Codex and Claude Code have been validated end-to-end. Cursor, Windsurf, and Copilot have scaffolded enum variants in the code but the wrapped-session flow hasn't been exercised for them.
 
@@ -246,39 +246,39 @@ Full credential values are **not intentionally logged**. Environment variable fi
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/trust-boundary-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/trust-boundary-light.svg">
-  <img alt="AgentFence trust boundary" src="docs/trust-boundary-light.svg" width="820">
+  <img alt="Fishbowl trust boundary" src="docs/trust-boundary-light.svg" width="820">
 
 </picture>
 
-AgentFence provides **visibility into opportunistic credential exfiltration** — malicious npm/pip postinstall scripts, env-var poisoning (CVE-2026-22708), MCP config tampering via prompt injection (CVE-2025-54135/54136), and prompt injection that runs `curl`/`wget` to exfiltrate credentials.
+Fishbowl provides **visibility into opportunistic credential exfiltration** — malicious npm/pip postinstall scripts, env-var poisoning (CVE-2026-22708), MCP config tampering via prompt injection (CVE-2025-54135/54136), and prompt injection that runs `curl`/`wget` to exfiltrate credentials.
 
 **Out of scope:** determined adversaries who specifically target the monitoring stack, the agent encoding credentials into its own API channel (e.g. to `api.anthropic.com`), and sophisticated multi-step exfil chains.
 
-AgentFence is **observation-only at runtime.** It does not block, terminate, or interfere with the agent. For kernel-level prevention with enforcement, see [owLSM](https://github.com/Cybereason-Public/owLSM), [Falco](https://falco.org/), or [Tetragon](https://tetragon.io/) — AgentFence is complementary to these tools, not a replacement for them.
+Fishbowl is **observation-only at runtime.** It does not block, terminate, or interfere with the agent. For kernel-level prevention with enforcement, see [owLSM](https://github.com/Cybereason-Public/owLSM), [Falco](https://falco.org/), or [Tetragon](https://tetragon.io/) — Fishbowl is complementary to these tools, not a replacement for them.
 
 ## CI/CD integration
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/ci-pipeline-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/ci-pipeline-light.svg">
-  <img alt="AgentFence CI/CD pipeline" src="docs/ci-pipeline-light.svg" width="1100">
+  <img alt="Fishbowl CI/CD pipeline" src="docs/ci-pipeline-light.svg" width="1100">
 </picture>
 
-Use `agentfence check` to gate CI/CD pipelines on session security. It reads the session logs, counts events by severity, and exits non-zero if the threshold is exceeded.
+Use `fishbowl check` to gate CI/CD pipelines on session security. It reads the session logs, counts events by severity, and exits non-zero if the threshold is exceeded.
 
 ```bash
-# Run the agent task inside AgentFence
-agentfence run ~/my-app --mount API_KEY -- codex "run the deploy script"
+# Run the agent task inside Fishbowl
+fishbowl run ~/my-app --mount API_KEY -- codex "run the deploy script"
 
 # Gate the pipeline — fail if any high-severity events occurred
-agentfence check --fail-on high
+fishbowl check --fail-on high
 ```
 
 Severity levels: `low`, `medium`, `high`, `critical`. The default threshold is `high`.
 
 ```
-AgentFence Check
-Session:  /Users/dev/.agentfence/logs/session-1775954089
+Fishbowl Check
+Session:  /Users/dev/.fishbowl/logs/session-1775954089
 Threshold: --fail-on high
 
 Events:   12 total (2 info, 0 low, 9 medium, 1 high, 0 critical)
@@ -299,10 +299,10 @@ What it catches:
 In a GitHub Actions workflow:
 
 ```yaml
-- name: Deploy with AgentFence
+- name: Deploy with Fishbowl
   run: |
-    agentfence run . --mount DEPLOY_KEY -- codex "deploy to staging"
-    agentfence check --fail-on high
+    fishbowl run . --mount DEPLOY_KEY -- codex "deploy to staging"
+    fishbowl check --fail-on high
 ```
 
-If `agentfence check` exits non-zero, the pipeline stops and the full session audit log is available for investigation.
+If `fishbowl check` exits non-zero, the pipeline stops and the full session audit log is available for investigation.

@@ -1,8 +1,8 @@
 FROM debian:bookworm-slim
 
-ENV AGENTFENCE_HOME="/agentfence/home"
-ENV HOME="${AGENTFENCE_HOME}"
-ENV PATH="${AGENTFENCE_HOME}/.local/bin:${PATH}"
+ENV FISHBOWL_HOME="/fishbowl/home"
+ENV HOME="${FISHBOWL_HOME}"
+ENV PATH="${FISHBOWL_HOME}/.local/bin:${PATH}"
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -26,20 +26,20 @@ RUN apt-get update \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /workspace /agentfence/ssh /agentfence/creds /agentfence/home /var/log/agentfence \
-    && chmod 0755 /agentfence/home
+RUN mkdir -p /workspace /fishbowl/ssh /fishbowl/creds /fishbowl/home /var/log/fishbowl \
+    && chmod 0755 /fishbowl/home
 
 WORKDIR /workspace
 
-COPY audit_log.py /usr/local/bin/agentfence-audit
-COPY registry_update.py /usr/local/bin/agentfence-registry
-COPY file_watcher.py /usr/local/bin/agentfence-file-watcher
-COPY workspace_watcher.py /usr/local/bin/agentfence-workspace-watcher
-COPY network_watcher.py /usr/local/bin/agentfence-network-watcher
-COPY bash_env.sh /agentfence/bash_env.sh
-COPY bashrc /agentfence/bashrc
-COPY entrypoint.sh /usr/local/bin/agentfence-entrypoint
-RUN chmod +x /usr/local/bin/agentfence-entrypoint /usr/local/bin/agentfence-audit /usr/local/bin/agentfence-registry /usr/local/bin/agentfence-file-watcher /usr/local/bin/agentfence-workspace-watcher /usr/local/bin/agentfence-network-watcher
+COPY audit_log.py /usr/local/bin/fishbowl-audit
+COPY registry_update.py /usr/local/bin/fishbowl-registry
+COPY file_watcher.py /usr/local/bin/fishbowl-file-watcher
+COPY workspace_watcher.py /usr/local/bin/fishbowl-workspace-watcher
+COPY network_watcher.py /usr/local/bin/fishbowl-network-watcher
+COPY bash_env.sh /fishbowl/bash_env.sh
+COPY bashrc /fishbowl/bashrc
+COPY entrypoint.sh /usr/local/bin/fishbowl-entrypoint
+RUN chmod +x /usr/local/bin/fishbowl-entrypoint /usr/local/bin/fishbowl-audit /usr/local/bin/fishbowl-registry /usr/local/bin/fishbowl-file-watcher /usr/local/bin/fishbowl-workspace-watcher /usr/local/bin/fishbowl-network-watcher
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/agentfence-entrypoint"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/fishbowl-entrypoint"]
 CMD ["/bin/bash"]
