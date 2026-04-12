@@ -966,6 +966,7 @@ fn materialize_claude_auth_mounts(
             &source_dir.join(".credentials.json"),
             &target_dir.join(".credentials.json"),
         )?;
+        materialize_claude_credentials_from_keychain(&target_dir.join(".credentials.json"))?;
         copy_file_if_exists(
             &source_dir.join(".current-session"),
             &target_dir.join(".current-session"),
@@ -1074,19 +1075,39 @@ fn host_claude_last_session_id(project_dir: &Path) -> Result<Option<String>> {
 }
 
 // Claude Code stores each resumable session as a flat `<id>.jsonl` transcript
-// at `~/.claude/projects/<slug>/<id>.jsonl`. History.jsonl and
-// `.claude.json.projects.<path>.lastSessionId` can outlive the transcript
-// (e.g. after manual cleanup, or when only subagent metadata remains under
-// `<id>/subagents/`). Handing an id without a transcript to `claude --resume`
-// inside the container crashes Claude ~2s after launch and the Ink TUI
-// teardown wipes the error — so validate before returning the id.
+// at `~/.claude/projects/<slug>/<id>.jsonl`. Both history.jsonl and
+// `.claude.json.projects.<path>.lastSessionId` can point at a transcript
+// that doesn't actually have a resumable conversation: the file may be
+// missing entirely (manual cleanup, only `<id>/subagents/` metadata left)
+// or it may be a *stub* — a single `permission-mode` header line left
+// behind when the user typed `/exit` before sending any message. In both
+// cases `claude --resume <id>` crashes ~2s after launch inside the
+// container and the Ink TUI teardown wipes the error, so the user only
+// sees `Error: docker run exited with status exit status: 1`. Require the
+// transcript to exist *and* contain at least one user/assistant line.
 fn claude_session_transcript_exists(home: &Path, project_dir: &Path, session_id: &str) -> bool {
     let slug = claude_project_slug(&project_dir.display().to_string());
-    home.join(".claude")
+    let path = home
+        .join(".claude")
         .join("projects")
         .join(slug)
-        .join(format!("{session_id}.jsonl"))
-        .is_file()
+        .join(format!("{session_id}.jsonl"));
+    let Ok(content) = fs::read_to_string(&path) else {
+        return false;
+    };
+    content.lines().any(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+            return false;
+        };
+        matches!(
+            value.get("type").and_then(Value::as_str),
+            Some("user") | Some("assistant")
+        )
+    })
 }
 
 fn host_claude_latest_history_session_id(
@@ -1661,6 +1682,64 @@ fn copy_file_if_exists(source: &Path, target: &Path) -> Result<()> {
     fs::copy(source, target)
         .with_context(|| format!("failed to copy {} -> {}", source.display(), target.display()))?;
     Ok(())
+}
+
+// Claude Code on macOS stores its OAuth token in the login Keychain under
+// service "Claude Code-credentials" instead of writing
+// `~/.claude/.credentials.json` to disk. The Linux container has no Keychain,
+// so Claude inside the container looks for `.credentials.json` as a plain
+// file. When the host file is missing (macOS with a Keychain-only install),
+// shell out to `security find-generic-password -w` to extract the token and
+// write it into the runtime auth dir. If the file already exists (Linux, or
+// older macOS installs) this is a no-op.
+fn materialize_claude_credentials_from_keychain(target: &Path) -> Result<()> {
+    if target.is_file() {
+        return Ok(());
+    }
+    let Some(token) = extract_claude_credentials_from_keychain() else {
+        if cfg!(target_os = "macos") {
+            eprintln!(
+                "[Fishbowl] Warning: no Claude credentials on host — neither \
+                 ~/.claude/.credentials.json nor macOS Keychain entry \
+                 \"Claude Code-credentials\" was found. Claude Code inside \
+                 the container will prompt you to log in."
+            );
+        }
+        return Ok(());
+    };
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(target, token.as_bytes())
+        .with_context(|| format!("failed to write {}", target.display()))?;
+    #[cfg(unix)]
+    set_private_file(target)?;
+    println!("[Fishbowl] Extracted Claude credentials from macOS Keychain");
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn extract_claude_credentials_from_keychain() -> Option<String> {
+    let output = Command::new("security")
+        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let token = String::from_utf8(output.stdout).ok()?;
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn extract_claude_credentials_from_keychain() -> Option<String> {
+    None
 }
 
 #[cfg(unix)]
