@@ -1018,14 +1018,33 @@ fn host_claude_last_session_id(project_dir: &Path) -> Result<Option<String>> {
         .with_context(|| format!("failed to parse {}", config_path.display()))?;
     let source_key = project_dir.display().to_string();
 
-    Ok(root
+    let last_session_id = root
         .get("projects")
         .and_then(Value::as_object)
         .and_then(|projects| projects.get(&source_key))
         .and_then(Value::as_object)
         .and_then(|project| project.get("lastSessionId"))
-        .and_then(Value::as_str)
+        .and_then(Value::as_str);
+
+    Ok(last_session_id
+        .filter(|id| claude_session_transcript_exists(&home, project_dir, id))
         .map(str::to_string))
+}
+
+// Claude Code stores each resumable session as a flat `<id>.jsonl` transcript
+// at `~/.claude/projects/<slug>/<id>.jsonl`. History.jsonl and
+// `.claude.json.projects.<path>.lastSessionId` can outlive the transcript
+// (e.g. after manual cleanup, or when only subagent metadata remains under
+// `<id>/subagents/`). Handing an id without a transcript to `claude --resume`
+// inside the container crashes Claude ~2s after launch and the Ink TUI
+// teardown wipes the error — so validate before returning the id.
+fn claude_session_transcript_exists(home: &Path, project_dir: &Path, session_id: &str) -> bool {
+    let slug = claude_project_slug(&project_dir.display().to_string());
+    home.join(".claude")
+        .join("projects")
+        .join(slug)
+        .join(format!("{session_id}.jsonl"))
+        .is_file()
 }
 
 fn host_claude_latest_history_session_id(
@@ -1052,6 +1071,9 @@ fn host_claude_latest_history_session_id(
         let Some(session_id) = record.get("sessionId").and_then(Value::as_str) else {
             continue;
         };
+        if !claude_session_transcript_exists(home, project_dir, session_id) {
+            continue;
+        }
         let timestamp = record.get("timestamp").and_then(Value::as_u64).unwrap_or(0);
 
         if latest
