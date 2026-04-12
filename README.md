@@ -172,7 +172,53 @@ Full credential values are **not intentionally logged**. Environment variable fi
 }
 ```
 
-**ebpf_exec.jsonl / ebpf_connect.jsonl / ebpf_file.jsonl** — host-side eBPF collector events, one JSON object per line. These are higher-fidelity than the in-container watchers because they run outside the agent's process tree at the kernel probe site.
+**ebpf_file.jsonl** — credential access events from the kernel file collector:
+
+```json
+{
+  "event": "credential_access",
+  "process_name": "cat",
+  "raw_path": "/workspace/.env",
+  "resolved_path": "/agentfence-demo/.env",
+  "operation": "openat",
+  "classification": "Project .env Credential File",
+  "process_chain": "cat <- bash <- tini <- containerd-shim <- systemd",
+  "collector": "bpftrace_file"
+}
+```
+
+**ebpf_exec.jsonl** — every process spawn inside the container:
+
+```json
+{
+  "event": "process_exec",
+  "process_name": "bash",
+  "filename": "/usr/bin/curl",
+  "cmdline": "curl -sS https://example.com/",
+  "process_chain": "curl <- bash <- tini <- containerd-shim <- systemd",
+  "env_findings": [
+    {
+      "variable": "BASH_ENV",
+      "classification": "Dangerous Execution Environment Variable",
+      "value_preview": "/age...(redacted,len=23)"
+    }
+  ],
+  "collector": "bpftrace_exec"
+}
+```
+
+**audit.jsonl** — env mutations caught by the bash hooks:
+
+```json
+{
+  "event": "dangerous_env_mutation",
+  "severity": "medium",
+  "command": "export PAGER=\"evil-pager\"",
+  "variable": "PAGER",
+  "new_value": "\"evi...(redacted,len=12)",
+  "reason": "dangerous variable mutation command observed"
+}
+```
 
 **findings.jsonl** — credential-access-then-network-connect correlation findings (e.g., "process read ~/.codex/auth.json then connected to 185.x.x.x:443").
 
