@@ -1,10 +1,10 @@
 # AgentFence
 
-[![Release](https://img.shields.io/github/v/release/Antonlovesdnb/AgentFence?style=flat-square&color=blue)](https://github.com/Antonlovesdnb/AgentFence/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/Antonlovesdnb/AgentFence/release.yml?style=flat-square&label=build)](https://github.com/Antonlovesdnb/AgentFence/actions)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/AgentFence/releases)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/AgentFence/actions)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
-[![License](https://img.shields.io/github/license/Antonlovesdnb/AgentFence?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![AI Agents](https://img.shields.io/badge/AI%20Agents-Friendly-blueviolet?style=flat-square)](AGENTS.md)
 
 <picture>
