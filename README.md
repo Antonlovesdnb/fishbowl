@@ -1,6 +1,6 @@
 # Fishbowl
 
-[![Release](https://img.shields.io/badge/release-v2.1.1-blue?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/releases)
+[![Release](https://img.shields.io/badge/release-v2.0.0-blue?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/releases)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](https://github.com/Antonlovesdnb/fishbowl/actions)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square)]()
@@ -35,13 +35,13 @@ When you run `fishbowl run ~/my-project`, this is what happens:
 
    See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
 
-![image-20260412101202171](/img/image-20260412101202171.png)
+![image-20260412101202171](img\image-20260412101202171.png)
 
-1. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container.
+1. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container. 
 
-   See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. On macOS, Claude Code stores its OAuth token in the login Keychain under service `"Claude Code-credentials"` rather than in `~/.claude/.credentials.json`; Fishbowl extracts it via `security find-generic-password -w` into the per-session runtime auth dir (0o600, parent 0o700, cleaned up with the rest of the session) so Claude running inside the Linux container can read it as a regular file. First run may trigger the standard macOS "allow security to access your keychain" dialog. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
+   See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
 
-![image-20260412101548199](/img/image-20260412101548199.png)
+![image-20260412101548199](img\image-20260412101548199.png)
 
 1. **Registry seeding.** Credential paths from the host scan are translated to their in-container equivalents and written to the runtime credential registry (`registry.json`). This is how the file collector knows which `openat()` events are interesting.
 
@@ -73,7 +73,7 @@ The script auto-detects your OS and architecture, downloads the right binary and
 
 **Requirements:** a container runtime — Docker Desktop, Colima, OrbStack, or Rancher Desktop — must be running before `fishbowl run`.
 
-**Options:** pin a version with `FISHBOWL_VERSION=v2.1.1`, override the install directory with `FISHBOWL_BIN_DIR=...`.
+**Options:** pin a version with `FISHBOWL_VERSION=v0.1.9`, override the install directory with `FISHBOWL_BIN_DIR=...`.
 
 **That's the whole install.** The container image gets built automatically the first time you run `fishbowl run` (a few minutes; one-time). If you'd rather get that out of the way up front, run `fishbowl build-image` after installing.
 
@@ -241,7 +241,8 @@ Full credential values are **not intentionally logged**. Environment variable fi
 | Platform | Monitoring | Notes |
 |---|---|---|
 | **Linux** (source or binary) | Host-side eBPF via `sudo` helper | Full exec/connect/file coverage, cgroup-scoped. No collector image needed — bpftrace runs as the host binary. |
-| **macOS** (source or binary) | eBPF sidecar in Docker VM | Full coverage. `install.sh` downloads the pre-built collector image from the release and `docker load`s it; source installs build it via `fishbowl build-image`. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
+| **macOS** (source install) | eBPF sidecar in Docker VM | Same coverage. `fishbowl build-image` builds both the agent and collector images. Auto-detects Docker Desktop/Colima/OrbStack/Rancher. |
+| **macOS** (prebuilt binary) | Container-local watchers | The collector image requires the source tree to build. `install.sh` attempts to download a pre-built collector from the release, but this requires repo access. Falls back to container-local telemetry if unavailable. |
 | **Any host, fallback** | Container-local watchers | If the eBPF path fails (no root on Linux, Docker not running, etc.), Fishbowl falls back to bash env hooks, inotify file watchers, and `ss` network polling. |
 
 **Container images are platform-specific.** After cloning to a different architecture, run `fishbowl build-image` before `fishbowl run`.
