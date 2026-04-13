@@ -13,11 +13,13 @@
   <img alt="Fishbowl architecture" src="docs/architecture-light.svg" width="1120">
 </picture>
 
-A containerized credential auditing perimeter for AI coding agents. Validated end-to-end with **Codex** and **Claude Code** on both macOS and Linux.
+A containerized credential auditing perimeter for AI coding agents. Validated with **Codex** and **Claude Code** on both macOS and Linux.
 
 Fishbowl wraps your AI agent in a Docker container, audits every credential access, environment variable mutation, and outbound network connection, then gives you a session report. It's observation-only — it doesn't block or kill anything the agent does.
 
 The container is the security boundary. The agent can see your project directory, its own auth files (auto-mounted copies of `~/.codex/` or `~/.claude/`), any credentials you explicitly `--mount`, and the session logs — but not the rest of your home directory or system. The container filesystem is read-only, all Linux capabilities are dropped, and privilege escalation is disabled.
+
+**<u>NOTE - fishbowl is a vibe coded project, please evaluate and test it before utilizing it in production use-cases</u>**
 
 ## How it works
 
@@ -29,11 +31,15 @@ The container is the security boundary. The agent can see your project directory
 
 When you run `fishbowl run ~/my-project`, this is what happens:
 
-1. **Host credential scan.** Fishbowl walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.fishbowl/host-scans/`) — it is NOT visible inside the container. See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
+1. **Host credential scan.** Fishbowl walks your home directory and project for known credential files (`.env`, `~/.aws/credentials`, `~/.codex/auth.json`, SSH keys, etc.) and prints what it finds. The scan report is saved to a host-only location (`~/.fishbowl/host-scans/`) — it is NOT visible inside the container. 
+
+   See [docs/credential-scanning.md](docs/credential-scanning.md) for the full list of paths and classification rules.
 
 ![image-20260412101202171](img\image-20260412101202171.png)
 
-1. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container. See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
+1. **Agent auto-detection.** Based on project markers (`CLAUDE.md`, `AGENTS.md`), host auth artifacts (`~/.codex/`, `~/.claude/`), and environment variable references, Fishbowl picks the agent type and auto-mounts the relevant auth files into `/fishbowl/home/` inside the container. 
+
+   See [docs/agent-detection.md](docs/agent-detection.md) for the detection priority cascade and what each agent gets. **Credential env vars and SSH keys referenced in project text are NOT auto-passed** — Fishbowl prints them as recommendations but requires explicit `--mount` to avoid a malicious repo silently importing host secrets.
 
 ![image-20260412101548199](img\image-20260412101548199.png)
 
@@ -61,7 +67,7 @@ When you run `fishbowl run ~/my-project`, this is what happens:
 curl -fsSL https://raw.githubusercontent.com/Antonlovesdnb/fishbowl/main/install.sh | sh
 ```
 
-That's it. The script auto-detects your OS and architecture, downloads the right binary and the collector image from the latest [GitHub release](https://github.com/Antonlovesdnb/fishbowl/releases), verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if no write access).
+The script auto-detects your OS and architecture, downloads the right binary and the collector image from the latest [GitHub release](https://github.com/Antonlovesdnb/fishbowl/releases), verifies the SHA256 checksum, and installs to `/usr/local/bin` (or `~/.local/bin` if no write access).
 
 **Supported platforms:** macOS (Apple Silicon) and Linux (x86_64 + arm64). Linux binaries are fully static (musl libc) so they run on any distro including Alpine.
 
@@ -112,6 +118,8 @@ The audit report shows:
 - **Credentials** — each discovered credential, its classification, access count, and expected destinations
 - **Alerts** — medium/high/critical severity events (env mutations, credential access by suspicious processes)
 - **Network** — outbound destinations with connection counts and alert flags
+
+Note - `fishbowl audit` is meant to be run outside of the container. 
 
 ### Session log location
 
@@ -252,7 +260,8 @@ Full credential values are **not intentionally logged**. Environment variable fi
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/trust-boundary-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/trust-boundary-light.svg">
-  <img alt="Fishbowl trust boundary" src="docs/trust-boundary-light.svg" width="820">
+  <img alt="Fishbowl trust boundary" src="docs/trust-boundary-light.svg" width="1000">
+
 
 </picture>
 
