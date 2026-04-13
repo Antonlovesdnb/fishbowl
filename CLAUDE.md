@@ -4,7 +4,7 @@ Project instructions for any Claude session working in this repo. Read this befo
 
 ## What this is
 
-Fishbowl is a Rust CLI that wraps AI coding agents in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. **Validated end-to-end with Codex and Claude Code today.** Cursor / Windsurf / Copilot have scaffolded `Agent` enum variants and detection branches in `agent_runtime.rs` but are not exercised — the wrapped-session flow, auto-auth mounts, and session sync-back have only been tested for the two validated agents. Don't make claims about untested agents in user-facing copy. The full spec lives in `Fishbowl.md`; this file is a fast-orientation cheat sheet.
+Fishbowl is a Rust CLI that wraps AI coding agents in a Docker container. It audits credential access, environment-variable mutations, and outbound network egress during agent runs. **Validated end-to-end with Codex and Claude Code today on both Linux and macOS.** Cursor / Windsurf / Copilot have scaffolded `Agent` enum variants and detection branches in `agent_runtime.rs` but are not exercised — the wrapped-session flow, auto-auth mounts, and session sync-back have only been tested for the two validated agents. Don't make claims about untested agents in user-facing copy. The original design spec lives in `docs/DESIGN_SPEC.md` (formerly `Fishbowl.md`) and diverges from the implementation in places; this file is a fast-orientation cheat sheet.
 
 ## Threat model — read this first
 
@@ -21,7 +21,7 @@ Fishbowl is designed to provide **visibility into opportunistic credential exfil
 - The agent encoding credentials into its own API channel (e.g., to `api.anthropic.com`)
 - Sophisticated multi-step exfil chains
 
-**Fishbowl is observation-only at runtime.** The only "enforcement" is the static container boundary itself (Docker namespaces, `--cap-drop ALL`, `--security-opt no-new-privileges`). Fishbowl does not block, terminate, or interfere with the agent at runtime — no `iptables` rules, no process kills, no `docker stop` on findings. Every layer (in-container watchers, host eBPF collectors) is audit/telemetry. `--monitor strong` gives *stronger observation* via Linux host-side eBPF, **not** dynamic enforcement. Don't add blocking — Codex removed it deliberately and `README.md` + `Fishbowl.md` say so explicitly.
+**Fishbowl is observation-only at runtime.** The only "enforcement" is the static container boundary itself (Docker namespaces, `--cap-drop ALL`, `--security-opt no-new-privileges`). Fishbowl does not block, terminate, or interfere with the agent at runtime — no `iptables` rules, no process kills, no `docker stop` on findings. Every layer (in-container watchers, host eBPF collectors) is audit/telemetry. `--monitor strong` gives *stronger observation* via Linux host-side eBPF, **not** dynamic enforcement. Don't add blocking — Codex removed it deliberately and `README.md` + `docs/DESIGN_SPEC.md` say so explicitly.
 
 ## Architecture (3 layers)
 
@@ -81,7 +81,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 ## Key conventions
 
 - **CLI surface is intentionally minimal.** Hide power-user/legacy flags with `#[arg(hide = true)]` rather than removing them. `.fishbowl.toml` is untrusted project input — don't add new features that auto-apply from it without `--trust-config`.
-- **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Review docs are versioned (`SECURITY_REVIEW.md` → `_4.md`); new passes reference prior IDs (S1–S16, N1–N14).
+- **Codex writes, Claude reviews, Codex applies fixes.** Don't assume files match prior memory — re-read before acting. Findings are tracked in `MEMORY.md` with stable IDs (S1–S16 from full security passes, N1–N14 from narrower passes); new review work should reuse those IDs when revisiting prior findings rather than renumbering.
 - **`auto_auth_path_aliases` duplicates file lists** from `materialize_codex_auth_mounts` and `materialize_claude_auth_mounts`. When adding new auto-mounted files to either materialize function, also update `auto_auth_path_aliases` so the registry seed picks them up.
 - **`docs/DESIGN_SPEC.md` (formerly `Fishbowl.md`) is the original design spec, not a contract.** Implementation diverges in places — check the code, not the spec.
 - **Dangerous-var lists are duplicated** in `container/bash_env.sh` and `src/ebpf.rs` (finding N5). Keep both in sync when editing either.
@@ -94,13 +94,14 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 - **Network watcher polls `ss` every 50ms.** Sub-50ms `curl` exfiltration evades it (S6). UDP/DNS coverage is best-effort (S5).
 - **Registry must be `{"credentials":[]}`, not `{}`.** Python handles either; Rust silently skips updates on `{}` (N9, fixed Pass 4).
 - **`seed_workspace_trust` auto-accepts Claude's trust dialog** (S4, still open). When working on this code, don't make it more aggressive without an opt-out.
+- **macOS Claude auth lives in the login Keychain**, not `~/.claude/.credentials.json`. `materialize_claude_credentials_from_keychain` shells out to `security find-generic-password -s "Claude Code-credentials" -w` when the on-disk file is missing and writes the token into the runtime auth dir (0o600). This is a posture change — the token now sits on disk for the runtime-dir TTL (6h) instead of staying Keychain-protected. Gated `#[cfg(target_os = "macos")]`; Linux is unchanged. Also: when auto-resuming, `claude_session_transcript_exists` now requires the transcript to contain a real `user`/`assistant` line, not just a `permission-mode` stub (v2.1.2, extended from the v2.0.1 fix).
 - **Project content must never control security posture.** Three rules:
   1. Env vars: only `agent_auth_env_hints(agent)` are auto-passed (e.g. `OPENAI_API_KEY` for Cursor — the user chose the agent). Everything else (including `GH_TOKEN`) requires `--mount`. Project-text-discovered vars are printed as recommendations only.
   2. SSH keys: presented as an interactive numbered list. User picks which to mount. Non-interactive mode requires `--mount ~/.ssh/<key>`. No auto-mounting.
   3. `.fishbowl.toml`: fully untrusted. Mounts are never applied from config (always require `--mount` on the CLI). Network and monitor overrides are always ignored (CLI flags only). `--no-config` skips project config entirely.
 - **`PROMPT_COMMAND` is itself a watched dangerous var** but is also how Fishbowl installs its hooks (S15). Edits must preserve the existing hook chain.
 - **Double bind-mount** of the project dir at both the computed workspace path and `/workspace` when they differ (N8/N12). Produces duplicate inotify events.
-- **macOS strong monitoring works on source installs, not prebuilt binaries** (validated 2026-04-09 on Colima 6.8.0-100-generic aarch64). The `DockerVmHelper` backend is end-to-end functional: provider auto-detect, privileged sidecar spawn with tracefs/debugfs bind-mounts, bpftrace probe attach, exec/connect/file event capture, credential-access registry updates. But the host's `build_image()` skips the collector image when `dev_source_root()` is `None`, and the GitHub release workflow doesn't publish the collector image to a registry. So prebuilt-binary installs on macOS can't use `--monitor strong` today — they fall back to `--monitor basic`. To use strong monitoring on macOS: `cargo install --path .` + `fishbowl build-image`. Long-term fix is publishing `fishbowl-collector` to GHCR so prebuilt-binary installs can `docker pull` it.
+- **macOS strong monitoring works on prebuilt binaries via `install.sh`** (validated 2026-04-09 on Colima 6.8.0-100-generic aarch64). The `DockerVmHelper` backend is end-to-end functional: provider auto-detect, privileged sidecar spawn with tracefs/debugfs bind-mounts, bpftrace probe attach, exec/connect/file event capture, credential-access registry updates. The release workflow publishes `fishbowl-collector-linux-{aarch64,x86_64}.tar.gz` as release assets, and `install.sh` downloads + `docker load`s the matching tarball so the image is preregistered as `fishbowl-collector:dev`. The host's `build_image()` still skips the collector when `dev_source_root()` is `None`, so without `install.sh` (e.g. `cargo install --git`) prebuilt installs still need a manual `docker load`. Note the arch normalization in `install.sh`: macOS `uname -m` is `arm64` but the release tarball is named `aarch64` — the script maps `arm64`→`aarch64` (fixed 2026-04-12, prior installs silently fell back to `--monitor basic`). Long-term, publishing `fishbowl-collector` to GHCR would let `docker pull` replace the tarball-load dance.
 
 ## Known security trade-offs
 
@@ -110,7 +111,7 @@ make build | test-launch | test-audit | test-discovery | test-file-access | test
 ## Where to look next
 
 - `docs/DESIGN_SPEC.md` — original design spec (historical, diverges from implementation)
+- `docs/adding-an-agent.md` — contributor checklist for wiring a new AI agent (touch points, drift traps, smoke tests)
 - `README.md` — usage, log format, session review, known limitations
 - `MEMORY.md` — consolidated findings snapshot from review passes + 2026-04-09 runtime validation
-- `SECURITY_REVIEW.md` → `SECURITY_REVIEW_4.md` — full review history
 - `.fishbowl.toml` — project-level config; loader at `src/config.rs`

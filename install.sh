@@ -123,23 +123,35 @@ trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 ARCHIVE="fishbowl-${TAG}-${TARGET}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE}"
 SUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
+SUMS_FILE="${TMP_DIR}/SHA256SUMS"
+SUMS_OK=0
+
+# Verifies an archive against the previously-downloaded SHA256SUMS file.
+# Args: 1=archive path on disk, 2=archive basename used in SHA256SUMS.
+# Aborts the install on any mismatch — never silently skip when SUMS_OK=1.
+verify_archive() {
+  archive_path="$1"
+  archive_name="$2"
+  expected=$(awk -v f="$archive_name" '$2 == f {print $1}' "$SUMS_FILE")
+  [ -n "$expected" ] || err "no checksum entry for ${archive_name} in SHA256SUMS"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$archive_path" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    actual=$(shasum -a 256 "$archive_path" | awk '{print $1}')
+  else
+    err "no sha256sum/shasum tool available to verify the download"
+  fi
+  [ "$expected" = "$actual" ] || err "checksum mismatch for ${archive_name}: expected ${expected}, got ${actual}"
+}
 
 info "downloading ${URL}"
 curl -fsSL "$URL" -o "${TMP_DIR}/${ARCHIVE}" || err "download failed: $URL"
 
-# Verify checksum if SHA256SUMS is published with the release.
-if curl -fsSL "$SUMS_URL" -o "${TMP_DIR}/SHA256SUMS" 2>/dev/null; then
+# Fetch SHA256SUMS once and reuse it for every archive in this release.
+if curl -fsSL "$SUMS_URL" -o "$SUMS_FILE" 2>/dev/null; then
+  SUMS_OK=1
   info "verifying checksum"
-  EXPECTED=$(awk -v f="$ARCHIVE" '$2 == f {print $1}' "${TMP_DIR}/SHA256SUMS")
-  [ -n "$EXPECTED" ] || err "no checksum entry for ${ARCHIVE} in SHA256SUMS"
-  if command -v sha256sum >/dev/null 2>&1; then
-    ACTUAL=$(sha256sum "${TMP_DIR}/${ARCHIVE}" | awk '{print $1}')
-  elif command -v shasum >/dev/null 2>&1; then
-    ACTUAL=$(shasum -a 256 "${TMP_DIR}/${ARCHIVE}" | awk '{print $1}')
-  else
-    err "no sha256sum/shasum tool available to verify the download"
-  fi
-  [ "$EXPECTED" = "$ACTUAL" ] || err "checksum mismatch: expected ${EXPECTED}, got ${ACTUAL}"
+  verify_archive "${TMP_DIR}/${ARCHIVE}" "$ARCHIVE"
 else
   warn "SHA256SUMS not found at ${SUMS_URL}, skipping checksum verification"
 fi
@@ -165,7 +177,14 @@ esac
 # Download the collector image for strong monitoring on macOS.
 # On Linux, bpftrace runs on the host kernel directly and doesn't need this.
 # The collector image runs inside the Docker VM on macOS.
-COLLECTOR_ARCH="$(uname -m)"
+# The collector tarball is always a Linux image (the Docker VM runs Linux),
+# so map the host arch to the Linux naming used by the release workflow:
+# Apple Silicon `arm64` → `aarch64`, Linux `x86_64`/`aarch64` pass through.
+case "$ARCH" in
+  arm64|aarch64) COLLECTOR_ARCH="aarch64" ;;
+  x86_64|amd64)  COLLECTOR_ARCH="x86_64" ;;
+  *)             COLLECTOR_ARCH="$ARCH" ;;
+esac
 COLLECTOR_ARCHIVE="fishbowl-collector-linux-${COLLECTOR_ARCH}.tar.gz"
 COLLECTOR_URL="https://github.com/${REPO}/releases/download/${TAG}/${COLLECTOR_ARCHIVE}"
 COLLECTOR_DIR="$HOME/.fishbowl/collector-images"
@@ -173,6 +192,19 @@ COLLECTOR_DIR="$HOME/.fishbowl/collector-images"
 info "downloading collector image for strong monitoring"
 mkdir -p "${COLLECTOR_DIR}"
 if curl -fsSL "${COLLECTOR_URL}" -o "${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}" 2>/dev/null; then
+  # Verify the collector tarball against the same SHA256SUMS used for the
+  # binary. The collector image runs with elevated privileges inside the
+  # Docker VM (privileged sidecar with bpftrace), so a tampered tarball
+  # would be a much higher-impact compromise than the user binary itself.
+  # Treat verification failure as fatal — never docker-load an unverified
+  # image. If SHA256SUMS wasn't available at all, fall through to the same
+  # "warn and continue" behavior used for the binary archive.
+  if [ "$SUMS_OK" = "1" ]; then
+    info "verifying collector checksum"
+    verify_archive "${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}" "$COLLECTOR_ARCHIVE"
+  else
+    warn "SHA256SUMS unavailable; skipping collector checksum verification"
+  fi
   info "collector image saved to ${COLLECTOR_DIR}/${COLLECTOR_ARCHIVE}"
   # Pre-load into Docker if the daemon is running
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then

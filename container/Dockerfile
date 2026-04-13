@@ -26,6 +26,16 @@ RUN apt-get update \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
+# Install the validated agent CLIs into the image. The Linux host-mount path
+# in `container.rs::auto_discovered_agent_runtime_mounts` bind-mounts the host's
+# npm-installed native binary on top of these on Linux hosts, so this baseline
+# is what gets used on macOS hosts (which can't share their host binary because
+# it's a Mach-O binary, not a Linux ELF). Pinning is intentionally avoided so
+# `fishbowl build-image` picks up the latest published agent each rebuild.
+RUN npm install -g @openai/codex @anthropic-ai/claude-code \
+    && npm cache clean --force \
+    && command -v codex >/dev/null && command -v claude >/dev/null
+
 RUN mkdir -p /workspace /fishbowl/ssh /fishbowl/creds /fishbowl/home /var/log/fishbowl \
     && chmod 0755 /fishbowl/home
 

@@ -493,7 +493,7 @@ fn spawn_docker_vm_helper_container(
     logs_dir: &Path,
     request: MonitoringRequest,
 ) -> Result<DockerVmHelperHandle> {
-    let helper_name = format!("{target_container_name}-fishbowl-vm-helper");
+    let helper_name = format!("{target_container_name}-vm-helper");
     let helper_image = collector_image_tag(image);
     let requested = requested_collectors(request);
 
@@ -501,6 +501,21 @@ fn spawn_docker_vm_helper_container(
         bail!(
             "collector image `{}` not found locally. Run `fishbowl build-image` first to build it on this host (images must be built per host architecture).",
             helper_image
+        );
+    }
+
+    // Reap a stale helper left by a prior fishbowl process that died before
+    // `stop_docker_vm_helper` could run; without this, the name conflict below
+    // kills strong monitoring on every subsequent run.
+    let reaped = Command::new("docker")
+        .args(["rm", "-f", &helper_name])
+        .output();
+    if let Ok(output) = reaped
+        && output.status.success()
+        && !output.stdout.is_empty()
+    {
+        eprintln!(
+            "[Fishbowl] Removed stale helper container `{helper_name}` left over from a previous run."
         );
     }
 
