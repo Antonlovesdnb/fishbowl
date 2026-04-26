@@ -288,6 +288,16 @@ pub fn run_container(options: RunOptions) -> Result<()> {
         eprintln!("[Fishbowl] Failed to seed credential registry from host scan: {err:#}");
     }
 
+    // For each user-supplied `--mount <cred>`, also register the canonical
+    // in-container home path the file would land at if the user re-symlinks
+    // it (e.g. `~/.azure/foo.json` → `/fishbowl/home/.azure/foo.json`). The
+    // mount target itself (`/fishbowl/creds/<basename>`) is matched via the
+    // hardcoded prefix shortcut in the file collector, but openat events on
+    // the canonical path miss the registry without an explicit alias entry.
+    if let Err(err) = seed_registry_from_user_cred_mounts(&logs_dir, &options.cred_mounts, &host_scan) {
+        eprintln!("[Fishbowl] Failed to seed credential registry from user --mount aliases: {err:#}");
+    }
+
     // host_scan.json contains the full credential path enumeration of the
     // host — ~/.aws/credentials, ~/.docker/config.json, etc. The seed
     // function already consumed the findings from the in-memory struct, and
@@ -2153,6 +2163,107 @@ fn seed_registry_from_host_scan(
             .with_context(|| format!("failed to write {}", registry_path.display()))?;
         println!(
             "[Fishbowl] Seeded credential registry: {project_added} workspace + {auth_added} agent-auth from host scan."
+        );
+    }
+
+    Ok(())
+}
+
+/// Seeds the registry with canonical-home alias entries for user `--mount`
+/// cred files. Without this, an openat via `<container-HOME>/<rel>` (the path
+/// a real attacker would use, e.g. `~/.azure/msal_token_cache.json`) doesn't
+/// match the `/fishbowl/creds/<basename>` mount target the file collector
+/// registers, and silently fails to tag as `credential_access`. The mount
+/// target path keeps working via the hardcoded prefix shortcut in
+/// `lookup_monitored_path`; this seeder just adds the canonical alias as a
+/// second match key in the registry.
+fn seed_registry_from_user_cred_mounts(
+    logs_dir: &Path,
+    cred_mounts: &[PathBuf],
+    host_scan: &HostScanReport,
+) -> Result<()> {
+    if cred_mounts.is_empty() {
+        return Ok(());
+    }
+    let Some(host_home) = dirs::home_dir() else {
+        return Ok(());
+    };
+
+    let registry_path = logs_dir.join("registry.json");
+    let content = fs::read_to_string(&registry_path)
+        .with_context(|| format!("failed to read {}", registry_path.display()))?;
+    let mut registry: Value = if content.trim().is_empty() {
+        json!({"credentials": []})
+    } else {
+        serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse {}", registry_path.display()))?
+    };
+    if registry.get("credentials").is_none() {
+        registry["credentials"] = json!([]);
+    }
+    let credentials = registry
+        .get_mut("credentials")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| anyhow!("registry.json credentials field is not an array"))?;
+
+    let now = utc_now_iso();
+    let mut added = 0usize;
+
+    for mount in cred_mounts {
+        let host_path = match canonical_file(mount) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let Ok(rel) = host_path.strip_prefix(&host_home) else {
+            // Mounts outside $HOME have no canonical home alias to register.
+            continue;
+        };
+        let rel_str = rel.to_string_lossy();
+        if rel_str.is_empty() {
+            continue;
+        }
+        let canonical_container_path = format!("{FISHBOWL_CONTAINER_HOME}/{rel_str}");
+        let registry_id = format!("file::{canonical_container_path}");
+
+        if credentials
+            .iter()
+            .any(|entry| entry.get("id").and_then(Value::as_str) == Some(&registry_id))
+        {
+            continue;
+        }
+
+        let classification = host_scan
+            .findings
+            .iter()
+            .find(|f| Path::new(&f.path) == host_path)
+            .map(|f| f.classification.clone())
+            .unwrap_or_else(|| "User-Mounted Credential".to_string());
+
+        credentials.push(json!({
+            "id": registry_id,
+            "classification": classification,
+            "discovery_method": "user_mount_alias",
+            "discovered_at": now,
+            "last_seen_at": now,
+            "source_command": Value::Null,
+            "type": "file",
+            "path": canonical_container_path,
+            "kind": "credential_file",
+            "mount_mode": "read-only",
+            "access_count": 0,
+            "last_accessed_at": Value::Null,
+            "expected_destinations": [],
+        }));
+        added += 1;
+    }
+
+    if added > 0 {
+        let serialized = serde_json::to_string_pretty(&registry)
+            .context("failed to serialize seeded registry")?;
+        fs::write(&registry_path, format!("{serialized}\n"))
+            .with_context(|| format!("failed to write {}", registry_path.display()))?;
+        println!(
+            "[Fishbowl] Seeded {added} canonical-home alias(es) for user --mount cred file(s)."
         );
     }
 
