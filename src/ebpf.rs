@@ -756,11 +756,38 @@ tracepoint:syscalls:sys_enter_execveat {predicate}
 
 fn build_connect_script(scope: &ScopeMetadata) -> String {
     let predicate = cgroup_predicate(scope);
+    // Hook the TCP state machine, not the connect() syscall. On
+    // bpftrace 0.20 + kernel 6.17, syscalls:sys_enter_connect was
+    // reproducibly silent for Node.js connects (every node openat in the
+    // same script fired correctly, but no node connect ever did). Probing
+    // sock:inet_sock_set_state on the SYN_SENT transition catches every
+    // outbound TCP attempt — syscall path, io_uring path, internal kernel —
+    // and the tracepoint args carry the destination IP and port directly,
+    // so we no longer need the /proc/<pid>/net/tcp lookup that races with
+    // short-lived processes and was producing "unresolved-fd:N" entries.
+    //
+    // Format emitted: pid \t comm \t dst_ip \t dst_port
+    // For IPv6, dst_ip is the hex string of the 16 daddr bytes.
     format!(
         r#"
-tracepoint:syscalls:sys_enter_connect {predicate}
+tracepoint:sock:inet_sock_set_state {predicate}
 {{
-  printf("%d\t%s\t%d\n", pid, comm, args->fd);
+  if (args->newstate == 2) {{
+    if (args->family == 2) {{
+      printf("%d\t%s\t%d.%d.%d.%d\t%d\n",
+        pid, comm,
+        args->daddr[0], args->daddr[1], args->daddr[2], args->daddr[3],
+        args->dport);
+    }} else if (args->family == 10) {{
+      printf("%d\t%s\t%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\t%d\n",
+        pid, comm,
+        args->daddr_v6[0], args->daddr_v6[1], args->daddr_v6[2], args->daddr_v6[3],
+        args->daddr_v6[4], args->daddr_v6[5], args->daddr_v6[6], args->daddr_v6[7],
+        args->daddr_v6[8], args->daddr_v6[9], args->daddr_v6[10], args->daddr_v6[11],
+        args->daddr_v6[12], args->daddr_v6[13], args->daddr_v6[14], args->daddr_v6[15],
+        args->dport);
+    }}
+  }}
 }}
 "#
     )
@@ -867,23 +894,26 @@ fn parse_connect_record(line: &str, scope: &ScopeMetadata) -> Option<ConnectEven
         return None;
     }
 
-    let mut parts = line.splitn(3, '\t');
+    // New format from sock:inet_sock_set_state probe: pid\tcomm\tdst_ip\tdst_port
+    let mut parts = line.splitn(4, '\t');
     let observed_pid = parts.next()?.parse::<i32>().ok()?;
     let process_name = parts.next()?.to_string();
-    let socket_fd = parts.next()?.parse::<i32>().ok()?;
+    let dst_ip = parts.next()?.to_string();
+    let dst_port = parts.next()?.parse::<u16>().ok()?;
     let observed_ppid = read_ppid(observed_pid).unwrap_or_default();
 
-    if !process_in_scope(observed_pid, &scope.pid_namespace) {
-        return None;
-    }
+    // Don't redundantly check process_in_scope here — same race rationale as
+    // parse_file_record. The cgroup predicate at the kernel probe site is
+    // authoritative; a userspace /proc lookup races with short-lived processes.
 
     let cmdline = read_cmdline(observed_pid).unwrap_or_else(|| process_name.clone());
     let process_chain = build_process_chain(observed_pid);
     let cgroup_paths = read_cgroup_paths(observed_pid).unwrap_or_default();
-    let mut destinations = collect_socket_destinations_with_retry(observed_pid, socket_fd);
-    if destinations.is_empty() {
-        destinations.push(format!("unresolved-fd:{socket_fd}"));
-    }
+    // socket_fd is no longer captured at the probe (the inet state tracepoint
+    // doesn't have it). Keep the field for back-compat with the audit shape
+    // but mark it as unknown.
+    let socket_fd: i32 = -1;
+    let destinations = vec![format!("{dst_ip}:{dst_port}")];
 
     Some(ConnectEventRecord {
         timestamp_unix_ms: SystemTime::now()
